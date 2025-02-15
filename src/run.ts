@@ -1,9 +1,9 @@
 import * as fs from 'fs/promises';
 import * as readline from 'readline';
 
-import { deepResearch, writeFinalReport } from './deep-research';
-import { generateFeedback } from './feedback';
-import { OutputManager } from './output-manager';
+import { deepResearch, writeFinalReport } from './deep-research.js';
+import { generateFeedback } from './feedback.js';
+import { OutputManager } from './output-manager.js';
 
 const output = new OutputManager();
 

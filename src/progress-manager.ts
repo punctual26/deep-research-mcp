@@ -1,4 +1,4 @@
-import { ResearchProgress } from './deep-research';
+import { ResearchProgress } from './deep-research.js';
 
 export class ProgressManager {
   private lastProgress: ResearchProgress | undefined;

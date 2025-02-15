@@ -1,6 +1,6 @@
 # Open Deep Research
 
-An AI-powered research assistant that performs iterative, deep research on any topic by combining search engines, web scraping, and large language models.
+An AI-powered research assistant that performs iterative, deep research on any topic by combining search engines, web scraping, and large language models. Available as a Model Context Protocol (MCP) tool for seamless integration with AI agents.
 
 The goal of this repo is to provide the simplest implementation of a deep research agent - e.g. an agent that can refine its research direction over time and deep dive into a topic. Goal is to keep the repo size at <500 LoC so it is easy to understand and build on top of.
 
@@ -67,6 +67,7 @@ flowchart TB
 
 ## Features
 
+- **MCP Integration**: Available as a Model Context Protocol tool for seamless integration with AI agents
 - **Iterative Research**: Performs deep research by iteratively generating search queries, processing results, and diving deeper based on findings
 - **Intelligent Query Generation**: Uses LLMs to generate targeted search queries based on research goals and previous findings
 - **Depth & Breadth Control**: Configurable parameters to control how wide (breadth) and deep (depth) the research goes
@@ -76,7 +77,7 @@ flowchart TB
 
 ## Requirements
 
-- Node.js environment
+- Node.js environment (v22.x recommended)
 - API keys for:
   - Firecrawl API (for web search and content extraction)
   - OpenAI API (for o3 mini model)
@@ -95,97 +96,69 @@ npm install
 3. Set up environment variables in a `.env.local` file:
 
 ```bash
+OPENAI_API_KEY="your_openai_key"
 FIRECRAWL_KEY="your_firecrawl_key"
-# If you want to use your self-hosted Firecrawl, add the following below:
+# Optional: If you want to use your self-hosted Firecrawl
 # FIRECRAWL_BASE_URL="http://localhost:3002"
-
-OPENAI_KEY="your_openai_key"
 ```
 
-To use local LLM, comment out `OPENAI_KEY` and instead uncomment `OPENAI_ENDPOINT` and `OPENAI_MODEL`:
-- Set `OPENAI_ENDPOINT` to the address of your local server (eg."http://localhost:1234/v1")
-- Set `OPENAI_MODEL` to the name of the model loaded in your local server.
-
-### Docker
-
-1. Clone the repository
-2. Rename `.env.example` to `.env.local` and set your API keys
-
-3. Run `npm install`
-
-4. Run the Docker image:
+4. Build the project:
 
 ```bash
-docker compose up -d
-```
-
-5. Execute `npm run docker` in the docker service:
-```bash
-docker exec -it deep-research npm run docker
+npm run build
 ```
 
 ## Usage
 
-Run the research assistant:
+### As an MCP Tool
+
+The deep research functionality is available as an MCP tool that can be used by AI agents. To start the MCP server:
 
 ```bash
-npm start
+node --env-file .env.local dist/mcp-server.js
 ```
 
-You'll be prompted to:
+The tool provides the following parameters:
+- `query` (string): The research query to investigate
+- `depth` (number, 1-5): How deep to go in the research tree
+- `breadth` (number, 1-5): How broad to make each research level
+- `existingLearnings` (string[], optional): Array of existing research findings to build upon
 
-1. Enter your research query
-2. Specify research breadth (recommended: 3-10, default: 4)
-3. Specify research depth (recommended: 1-5, default: 2)
-4. Answer follow-up questions to refine the research direction
+Example tool usage in an agent:
+```typescript
+const result = await mcp.invoke("deep-research", {
+  query: "What are the latest developments in quantum computing?",
+  depth: 3,
+  breadth: 3
+});
+```
 
-The system will then:
+The tool returns:
+- A detailed markdown report of the findings
+- List of sources used in the research
+- Metadata about learnings and visited URLs
 
-1. Generate and execute search queries
-2. Process and analyze search results
-3. Recursively explore deeper based on findings
-4. Generate a comprehensive markdown report
+### Standalone Usage
 
-The final report will be saved as `output.md` in your working directory.
-
-### Concurrency
-
-If you have a paid version of Firecrawl or a local version, feel free to increase the `ConcurrencyLimit` in `deep-research.ts` so it runs a lot faster.
-
-If you have a free version, you may sometimes run into rate limit errors, you can reduce the limit (but it will run a lot slower).
-
-### Custom endpoints and models
-
-There are 2 other optional env vars that lets you tweak the endpoint (for other OpenAI compatible APIs like OpenRouter or Gemini) as well as the model string.
+For standalone usage without MCP, you can use the CLI interface:
 
 ```bash
-OPENAI_ENDPOINT="custom_endpoint"
-OPENAI_MODEL="custom_model"
+npm run start "Your research query here"
 ```
 
-## How It Works
+## Development
 
-1. **Initial Setup**
+To run in development mode with automatic reloading:
 
-   - Takes user query and research parameters (breadth & depth)
-   - Generates follow-up questions to understand research needs better
+```bash
+npm run build:watch
+```
 
-2. **Deep Research Process**
+To test the MCP server with the inspector:
 
-   - Generates multiple SERP queries based on research goals
-   - Processes search results to extract key learnings
-   - Generates follow-up research directions
-
-3. **Recursive Exploration**
-
-   - If depth > 0, takes new research directions and continues exploration
-   - Each iteration builds on previous learnings
-   - Maintains context of research goals and findings
-
-4. **Report Generation**
-   - Compiles all findings into a comprehensive markdown report
-   - Includes all sources and references
-   - Organizes information in a clear, readable format
+```bash
+npx @modelcontextprotocol/inspector node --env-file .env.local dist/mcp-server.js
+```
 
 ## License
 

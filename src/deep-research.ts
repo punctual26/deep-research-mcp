@@ -4,17 +4,15 @@ import { compact } from 'lodash-es';
 import pLimit from 'p-limit';
 import { z } from 'zod';
 
-import { o3MiniModel, trimPrompt } from './ai/providers';
-import { systemPrompt } from './prompt';
-import { OutputManager } from './output-manager';
+import { o3MiniModel, trimPrompt } from './ai/providers.js';
+import { systemPrompt } from './prompt.js';
 
-// Initialize output manager for coordinated console/progress output
-const output = new OutputManager();
-
-// Replace console.log with output.log
-function log(...args: any[]) {
-  output.log(...args);
-}
+// Helper function to log to stderr
+const log = (...args: any[]) => {
+  process.stderr.write(args.map(arg => 
+    typeof arg === 'string' ? arg : JSON.stringify(arg)
+  ).join(' ') + '\n');
+};
 
 export type ResearchProgress = {
   currentDepth: number;
@@ -35,9 +33,8 @@ type ResearchResult = {
 const ConcurrencyLimit = 2;
 
 // Initialize Firecrawl with optional API key and optional base url
-
 const firecrawl = new FirecrawlApp({
-  apiKey: process.env.FIRECRAWL_KEY ?? '',
+  apiKey: process.env.FIRECRAWL_API_KEY ?? '',
   apiUrl: process.env.FIRECRAWL_BASE_URL,
 });
 
@@ -49,8 +46,6 @@ async function generateSerpQueries({
 }: {
   query: string;
   numQueries?: number;
-
-  // optional, if provided, the research will continue from the last learning
   learnings?: string[];
 }) {
   const res = await generateObject({
@@ -79,7 +74,7 @@ async function generateSerpQueries({
     }),
   });
   log(
-    `Created ${res.object.queries.length} queries`,
+    'Created queries:',
     res.object.queries,
   );
 
@@ -100,7 +95,8 @@ async function processSerpResult({
   const contents = compact(result.data.map(item => item.markdown)).map(
     content => trimPrompt(content, 25_000),
   );
-  log(`Ran ${query}, found ${contents.length} contents`);
+  const urls = compact(result.data.map(item => item.url));
+  log(`Ran ${query}, found ${contents.length} contents and ${urls.length} URLs:`, urls);
 
   const res = await generateObject({
     model: o3MiniModel,
@@ -137,6 +133,12 @@ export async function writeFinalReport({
   learnings: string[];
   visitedUrls: string[];
 }) {
+  log('Writing final report with:', {
+    numLearnings: learnings.length,
+    numUrls: visitedUrls.length,
+    urls: visitedUrls
+  });
+
   const learningsString = trimPrompt(
     learnings
       .map(learning => `<learning>\n${learning}\n</learning>`)
@@ -157,6 +159,7 @@ export async function writeFinalReport({
 
   // Append the visited URLs section to the report
   const urlsSection = `\n\n## Sources\n\n${visitedUrls.map(url => `- ${url}`).join('\n')}`;
+  log('Generated URL section:', urlsSection);
   return res.object.reportMarkdown + urlsSection;
 }
 
