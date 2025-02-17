@@ -58,11 +58,33 @@ server.tool(
           if (progressMsg !== currentProgress) {
             currentProgress = progressMsg;
             log(progressMsg);
+
+            // Send progress notification with the text message
+            server.server.notification({
+              method: "notifications/progress",
+              params: {
+                progressToken: 0,
+                data: progressMsg
+              }
+            }).catch(error => {
+              log("Error sending progress notification:", error);
+            });
           }
         }
       });
 
       log("Research completed, generating report...");
+
+      // Send final progress update
+      server.server.notification({
+        method: "notifications/progress",
+        params: {
+          progressToken: 0,
+          data: "Research completed, generating report..."
+        }
+      }).catch(error => {
+        log("Error sending final progress notification:", error);
+      });
 
       // Generate final report
       const report = await writeFinalReport({
