@@ -1,17 +1,16 @@
 import { config } from 'dotenv';
 import { resolve } from 'path';
 import { fileURLToPath } from 'url';
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { z } from "zod";
+import { deepResearch, writeFinalReport } from "./deep-research.js";
 
 // Get the directory name of the current module
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
 // Load environment variables from .env.local
 config({ path: resolve(__dirname, '../.env.local') });
-
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { z } from "zod";
-import { deepResearch, writeFinalReport } from "./deep-research.js";
 
 // Helper function to log to stderr
 const log = (...args: any[]) => {
