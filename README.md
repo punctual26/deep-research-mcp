@@ -101,6 +101,25 @@ FIRECRAWL_KEY="your_firecrawl_key"
 # FIRECRAWL_BASE_URL="http://localhost:3002"
 ```
 
+### Using Local Firecrawl with SearXNG (No API Keys Required)
+
+As an alternative to using the Firecrawl API key, you can run a local Firecrawl instance with SearXNG as the search backend. This approach is completely free and doesn't require any API keys for the search functionality.
+
+1. Clone the local Firecrawl repository:
+```bash
+git clone https://github.com/Ozamatash/localfirecrawl
+cd localfirecrawl
+```
+
+2. Follow the setup instructions in the localfirecrawl repository to start the Docker container with SearXNG.
+
+3. Update your `.env.local` file to use the local Firecrawl instance:
+```bash
+OPENAI_API_KEY="your_openai_key"
+FIRECRAWL_BASE_URL="http://localhost:3002"
+# No FIRECRAWL_KEY needed when using local instance
+```
+
 4. Build the project:
 
 ```bash
