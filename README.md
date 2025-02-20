@@ -1,9 +1,40 @@
-# Open Deep Research
+# Open Deep Research MCP Server
 
-An AI-powered research assistant that performs iterative, deep research on any topic by combining search engines, web scraping, and large language models. Available as a Model Context Protocol (MCP) tool for seamless integration with AI agents.
+An AI-powered research assistant that performs deep, iterative research on any topic. It combines search engines, web scraping, and AI to explore topics in depth and generate comprehensive reports. Available as a Model Context Protocol (MCP) tool or standalone CLI.
 
-The goal of this repo is to provide the simplest implementation of a deep research agent - e.g. an agent that can refine its research direction over time and deep dive into a topic. Goal is to keep the repo size at <500 LoC so it is easy to understand and build on top of.
+## Quick Start
 
+1. Clone and install:
+```bash
+git clone https://github.com/Ozamatash/deep-research
+cd deep-research
+npm install
+```
+
+2. Set up environment in `.env.local`:
+```bash
+# Copy the example environment file
+cp .env.example .env.local
+```
+
+3. Build:
+```bash
+# Build the server
+npm run build
+```
+
+4. Run the cli version:
+```bash
+npm run start "Your research query here"
+```
+
+## Features
+
+- Performs deep, iterative research by generating targeted search queries
+- Controls research scope with depth (how deep) and breadth (how wide) parameters
+- Generates follow-up questions to better understand research needs
+- Produces detailed markdown reports with findings and sources
+- Available as a Model Context Protocol (MCP) tool for AI agents
 
 ## How It Works
 
@@ -64,112 +95,36 @@ flowchart TB
     class NL,ND results
 ```
 
-## Features
+## Advanced Setup
 
-- **MCP Integration**: Available as a Model Context Protocol tool for seamless integration with AI agents
-- **Iterative Research**: Performs deep research by iteratively generating search queries, processing results, and diving deeper based on findings
-- **Intelligent Query Generation**: Uses LLMs to generate targeted search queries based on research goals and previous findings
-- **Depth & Breadth Control**: Configurable parameters to control how wide (breadth) and deep (depth) the research goes
-- **Smart Follow-up**: Generates follow-up questions to better understand research needs
-- **Comprehensive Reports**: Produces detailed markdown reports with findings and sources
-- **Concurrent Processing**: Handles multiple searches and result processing in parallel for efficiency
+### Using Local Firecrawl (Free Option)
 
-## Requirements
+Instead of using the Firecrawl API, you can run a local instance. You can use the official repo or my fork which uses searXNG as the search backend to avoid using a searchapi key:
 
-- Node.js environment (v22.x recommended)
-- API keys for:
-  - Firecrawl API (for web search and content extraction)
-  - OpenAI API (for o3 mini model)
-
-## Setup
-
-### Node.js
-
-1. Clone the repository
-2. Install dependencies:
-
-```bash
-npm install
-```
-
-3. Set up environment variables in a `.env.local` file:
-
-```bash
-OPENAI_API_KEY="your_openai_key"
-FIRECRAWL_KEY="your_firecrawl_key"
-# Optional: If you want to use your self-hosted Firecrawl
-# FIRECRAWL_BASE_URL="http://localhost:3002"
-```
-
-### Using Local Firecrawl with SearXNG (No API Keys Required)
-
-As an alternative to using the Firecrawl API key, you can run a local Firecrawl instance with SearXNG as the search backend. This approach is completely free and doesn't require any API keys for the search functionality.
-
-1. Clone the local Firecrawl repository:
+1. Set up local Firecrawl:
 ```bash
 git clone https://github.com/Ozamatash/localfirecrawl
 cd localfirecrawl
+# Follow setup in localfirecrawl README
 ```
 
-2. Follow the setup instructions in the localfirecrawl repository to start the Docker container with SearXNG.
-
-3. Update your `.env.local` file to use the local Firecrawl instance:
+2. Update `.env.local`:
 ```bash
-OPENAI_API_KEY="your_openai_key"
 FIRECRAWL_BASE_URL="http://localhost:3002"
-# No FIRECRAWL_KEY needed when using local instance
 ```
 
-4. Build the project:
+### Optional: Observability
+
+Add observability to track research flows, queries, and results using Langfuse:
 
 ```bash
-npm run build
+# Add to .env.local
+LANGFUSE_PUBLIC_KEY="your_langfuse_public_key"
+LANGFUSE_SECRET_KEY="your_langfuse_secret_key"
 ```
 
-## Usage
-
-### As an MCP Tool
-
-The deep research functionality is available as an MCP tool that can be used by AI agents. To start the MCP server:
-
-```bash
-node --env-file .env.local dist/mcp-server.js
-```
-
-The tool provides the following parameters:
-- `query` (string): The research query to investigate
-- `depth` (number, 1-5): How deep to go in the research tree
-- `breadth` (number, 1-5): How broad to make each research level
-- `existingLearnings` (string[], optional): Array of existing research findings to build upon
-
-Example tool usage in an agent:
-```typescript
-const result = await mcp.invoke("deep-research", {
-  query: "What are the latest developments in quantum computing?",
-  depth: 3,
-  breadth: 3
-});
-```
-
-The tool returns:
-- A detailed markdown report of the findings
-- List of sources used in the research
-- Metadata about learnings and visited URLs
-
-### Standalone Usage
-
-For standalone usage without MCP, you can use the CLI interface:
-
-```bash
-npm run start "Your research query here"
-```
-
-To test the MCP server with the inspector:
-
-```bash
-npx @modelcontextprotocol/inspector node --env-file .env.local dist/mcp-server.js
-```
+The app works normally without observability if no Langfuse keys are provided.
 
 ## License
 
-MIT License - feel free to use and modify as needed.
+MIT License

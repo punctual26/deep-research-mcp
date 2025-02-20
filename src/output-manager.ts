@@ -6,20 +6,20 @@ export class OutputManager {
   private initialized: boolean = false;
   
   constructor() {
-    // Initialize terminal
-    process.stdout.write('\n'.repeat(this.progressLines));
+    // Initialize terminal using stderr
+    process.stderr.write('\n'.repeat(this.progressLines));
     this.initialized = true;
   }
   
   log(...args: any[]) {
     // Move cursor up to progress area
     if (this.initialized) {
-      process.stdout.write(`\x1B[${this.progressLines}A`);
+      process.stderr.write(`\x1B[${this.progressLines}A`);
       // Clear progress area
-      process.stdout.write('\x1B[0J');
+      process.stderr.write('\x1B[0J');
     }
-    // Print log message
-    console.log(...args);
+    // Print log message to stderr
+    console.error(...args);
     // Redraw progress area if initialized
     if (this.initialized) {
       this.drawProgress();
@@ -37,7 +37,7 @@ export class OutputManager {
   }
   
   private getProgressBar(value: number, total: number): string {
-    const width = process.stdout.columns ? Math.min(30, process.stdout.columns - 20) : 30;
+    const width = process.stderr.columns ? Math.min(30, process.stderr.columns - 20) : 30;
     const filled = Math.round((width * value) / total);
     return '█'.repeat(filled) + ' '.repeat(width - filled);
   }
@@ -46,11 +46,12 @@ export class OutputManager {
     if (!this.initialized || this.progressArea.length === 0) return;
     
     // Move cursor to progress area
-    const terminalHeight = process.stdout.rows || 24;
-    process.stdout.write(`\x1B[${terminalHeight - this.progressLines};1H`);
-    // Draw progress bars
-    process.stdout.write(this.progressArea.join('\n'));
-    // Move cursor back to content area
-    process.stdout.write(`\x1B[${terminalHeight - this.progressLines - 1};1H`);
+    const terminalHeight = process.stderr.rows || 24;
+    process.stderr.write(`\x1B[${terminalHeight - this.progressLines};1H`);
+    
+    // Draw each line of the progress area
+    for (const line of this.progressArea) {
+      process.stderr.write(line + '\n');
+    }
   }
 }

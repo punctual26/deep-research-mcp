@@ -9,7 +9,7 @@ const langfuse = new Langfuse({
 });
 
 langfuse.on('error', (error) => {
-  console.error('Langfuse error:', error);
+  process.stderr.write(`Langfuse error: ${error}\n`);
 });
 
 export default langfuse; 

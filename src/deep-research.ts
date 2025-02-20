@@ -34,10 +34,13 @@ type ResearchResult = {
   visitedUrls: string[];
 };
 
-// Configurable concurrency limit
+// Configurable concurrency limit - use env setting or default to 2
 const ConcurrencyLimit = process.env.FIRECRAWL_CONCURRENCY 
   ? parseInt(process.env.FIRECRAWL_CONCURRENCY, 10)
-  : process.env.FIRECRAWL_BASE_URL ? 8 : 2;
+  : 2;
+
+// Log the concurrency setting
+log('Using concurrency limit:', ConcurrencyLimit);
 
 // Initialize Firecrawl with optional API key and optional base url
 

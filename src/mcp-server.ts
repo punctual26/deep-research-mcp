@@ -22,7 +22,9 @@ const log = (...args: any[]) => {
 // Log environment variables for debugging (excluding sensitive values)
 log('Environment check:', {
   hasOpenAiKey: !!process.env.OPENAI_API_KEY,
-  hasFirecrawlKey: !!process.env.FIRECRAWL_API_KEY
+  hasFirecrawlKey: !!process.env.FIRECRAWL_KEY,
+  firecrawlBaseUrl: process.env.FIRECRAWL_BASE_URL || '(using API)',
+  firecrawlConcurrency: process.env.FIRECRAWL_CONCURRENCY || '2 (default)'
 });
 
 const server = new McpServer({
