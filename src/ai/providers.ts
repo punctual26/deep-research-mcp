@@ -1,5 +1,7 @@
 import { createOpenAI, type OpenAIProviderSettings } from '@ai-sdk/openai';
+import { type LanguageModelV1 } from '@ai-sdk/provider';
 import { getEncoding } from 'js-tiktoken';
+import langfuse from './observability.js';
 
 import { RecursiveCharacterTextSplitter } from './text-splitter.js';
 
@@ -7,7 +9,7 @@ interface CustomOpenAIProviderSettings extends OpenAIProviderSettings {
   baseURL?: string;
 }
 
-// Providers
+// Create OpenAI provider
 const openai = createOpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
   baseURL: process.env.OPENAI_ENDPOINT || 'https://api.openai.com/v1',
@@ -15,12 +17,36 @@ const openai = createOpenAI({
 
 const customModel = process.env.OPENAI_MODEL || 'o3-mini';
 
-// Models
-
-export const o3MiniModel = openai(customModel, {
+// Create model with Langfuse instrumentation
+const baseModel = openai(customModel, {
   reasoningEffort: customModel.startsWith('o') ? 'medium' : undefined,
   structuredOutputs: true,
 });
+
+export const o3MiniModel = {
+  ...baseModel,
+  defaultObjectGenerationMode: 'json',
+  async doGenerate(options) {
+    const generation = langfuse.generation({
+      name: 'LLM Generation',
+      model: customModel,
+      input: options,
+      modelParameters: {
+        reasoningEffort: customModel.startsWith('o') ? 'medium' : undefined,
+        structuredOutputs: true,
+      },
+    });
+
+    try {
+      const result = await baseModel.doGenerate(options);
+      generation.end({ output: result });
+      return result;
+    } catch (error) {
+      generation.end({ metadata: { error: String(error) } });
+      throw error;
+    }
+  }
+} as LanguageModelV1;
 
 const MinChunkSize = 140;
 const encoder = getEncoding('o200k_base');
