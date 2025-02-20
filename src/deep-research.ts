@@ -3,9 +3,19 @@ import { generateObject } from 'ai';
 import { compact } from 'lodash-es';
 import pLimit from 'p-limit';
 import { z } from 'zod';
+import { config } from 'dotenv';
+import { resolve } from 'path';
+import { fileURLToPath } from 'url';
 import { o3MiniModel, trimPrompt } from './ai/providers.js';
 import { systemPrompt } from './prompt.js';
 import { OutputManager } from './output-manager.js';
+import { firecrawl as firecrawlConfig } from './config.js';
+
+// Get the directory name of the current module
+const __dirname = fileURLToPath(new URL('.', import.meta.url));
+
+// Load environment variables from .env.local
+config({ path: resolve(__dirname, '../.env.local') });
 
 // Initialize output manager for coordinated console/progress output
 const output = new OutputManager();
@@ -34,19 +44,13 @@ type ResearchResult = {
   visitedUrls: string[];
 };
 
-// Configurable concurrency limit - use env setting or default to 2
-const ConcurrencyLimit = process.env.FIRECRAWL_CONCURRENCY 
-  ? parseInt(process.env.FIRECRAWL_CONCURRENCY, 10)
-  : 2;
+// Configurable concurrency limit
+const ConcurrencyLimit = firecrawlConfig.concurrency;
 
-// Log the concurrency setting
-log('Using concurrency limit:', ConcurrencyLimit);
-
-// Initialize Firecrawl with optional API key and optional base url
-
+// Initialize Firecrawl with config
 const firecrawl = new FirecrawlApp({
-  apiKey: process.env.FIRECRAWL_KEY ?? '',
-  apiUrl: process.env.FIRECRAWL_BASE_URL,
+  apiKey: firecrawlConfig.apiKey,
+  apiUrl: firecrawlConfig.baseUrl,
 });
 
 // take en user query, return a list of SERP queries

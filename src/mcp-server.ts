@@ -1,16 +1,8 @@
-import { config } from 'dotenv';
-import { resolve } from 'path';
-import { fileURLToPath } from 'url';
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { deepResearch, writeFinalReport } from "./deep-research.js";
-
-// Get the directory name of the current module
-const __dirname = fileURLToPath(new URL('.', import.meta.url));
-
-// Load environment variables from .env.local
-config({ path: resolve(__dirname, '../.env.local') });
+import { Config } from './config.js';
 
 // Helper function to log to stderr
 const log = (...args: any[]) => {
@@ -19,12 +11,12 @@ const log = (...args: any[]) => {
   ).join(' ') + '\n');
 };
 
-// Log environment variables for debugging (excluding sensitive values)
+// Log environment check
 log('Environment check:', {
-  hasOpenAiKey: !!process.env.OPENAI_API_KEY,
-  hasFirecrawlKey: !!process.env.FIRECRAWL_KEY,
-  firecrawlBaseUrl: process.env.FIRECRAWL_BASE_URL || '(using API)',
-  firecrawlConcurrency: process.env.FIRECRAWL_CONCURRENCY || '2 (default)'
+  hasOpenAiKey: !!Config.openai.apiKey,
+  hasFirecrawlKey: !!Config.firecrawl.apiKey,
+  firecrawlBaseUrl: Config.firecrawl.baseUrl || '(using API)',
+  firecrawlConcurrency: Config.firecrawl.concurrency
 });
 
 const server = new McpServer({
@@ -44,10 +36,6 @@ server.tool(
   },
   async ({ query, depth, breadth, existingLearnings = [] }) => {
     try {
-      log("Starting research with query:", query);
-      log("Parameters:", { depth, breadth, existingLearningsCount: existingLearnings.length });
-
-      // Track research progress
       let currentProgress = "";
       
       const result = await deepResearch({
@@ -61,7 +49,6 @@ server.tool(
             currentProgress = progressMsg;
             log(progressMsg);
 
-            // Send progress notification with the text message
             server.server.notification({
               method: "notifications/progress",
               params: {
@@ -75,27 +62,11 @@ server.tool(
         }
       });
 
-      log("Research completed, generating report...");
-
-      // Send final progress update
-      server.server.notification({
-        method: "notifications/progress",
-        params: {
-          progressToken: 0,
-          data: "Research completed, generating report..."
-        }
-      }).catch(error => {
-        log("Error sending final progress notification:", error);
-      });
-
-      // Generate final report
       const report = await writeFinalReport({
         prompt: query,
         learnings: result.learnings,
         visitedUrls: result.visitedUrls
       });
-
-      log("Report generated successfully");
 
       return {
         content: [
@@ -114,15 +85,12 @@ server.tool(
         }
       };
     } catch (error) {
-      log("Error in deep research:", error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      log("Error message:", errorMessage);
-      
+      log("Error in deep research:", error instanceof Error ? error.message : String(error));
       return {
         content: [
           {
             type: "text",
-            text: `Error performing research: ${errorMessage}`
+            text: `Error performing research: ${error instanceof Error ? error.message : String(error)}`
           }
         ],
         isError: true
@@ -133,7 +101,6 @@ server.tool(
 
 async function main() {
   try {
-    // Start receiving messages on stdin and sending messages on stdout
     const transport = new StdioServerTransport();
     await server.connect(transport);
     log("Deep Research MCP Server running on stdio");

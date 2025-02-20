@@ -27,6 +27,9 @@ npm run build
 ```bash
 npm run start "Your research query here"
 ```
+5. Test MCP Server with Claude Desktop:  
+Follow the guide thats at the bottom of server quickstart to add the server to Claude Desktop:  
+https://modelcontextprotocol.io/quickstart/server
 
 ## Features
 
@@ -35,6 +38,7 @@ npm run start "Your research query here"
 - Generates follow-up questions to better understand research needs
 - Produces detailed markdown reports with findings and sources
 - Available as a Model Context Protocol (MCP) tool for AI agents
+- For now MCP version doesn't ask follow up questions
 
 ## How It Works
 
