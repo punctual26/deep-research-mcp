@@ -1,8 +1,8 @@
 import { createOpenAI, type OpenAIProviderSettings } from '@ai-sdk/openai';
 import { type LanguageModelV1 } from '@ai-sdk/provider';
 import { getEncoding } from 'js-tiktoken';
-import langfuse from './observability.js';
 
+import langfuse from './observability.js';
 import { RecursiveCharacterTextSplitter } from './text-splitter.js';
 
 interface CustomOpenAIProviderSettings extends OpenAIProviderSettings {
@@ -45,7 +45,7 @@ export const o3MiniModel = {
       generation.end({ metadata: { error: String(error) } });
       throw error;
     }
-  }
+  },
 } as LanguageModelV1;
 
 const MinChunkSize = 140;

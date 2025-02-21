@@ -1,6 +1,6 @@
-import { config } from 'dotenv';
 import { resolve } from 'path';
 import { fileURLToPath } from 'url';
+import { config } from 'dotenv';
 import { z } from 'zod';
 
 // Get the directory name of the current module
@@ -40,4 +40,4 @@ export const Config = {
 } as const;
 
 // Export individual configs for convenience
-export const { openai, firecrawl, langfuse } = Config; 
+export const { openai, firecrawl, langfuse } = Config;

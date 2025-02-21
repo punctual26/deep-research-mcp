@@ -1,10 +1,10 @@
 import * as fs from 'fs/promises';
 import * as readline from 'readline';
 
+import langfuse from './ai/observability.js';
 import { deepResearch, writeFinalReport } from './deep-research.js';
 import { generateFeedback } from './feedback.js';
 import { OutputManager } from './output-manager.js';
-import langfuse from './ai/observability.js';
 
 const output = new OutputManager();
 
@@ -30,44 +30,56 @@ function askQuestion(query: string): Promise<string> {
 // run the agent
 async function run() {
   // Create main research session trace
-  const sessionTrace = langfuse.trace({ 
-    name: 'Research Session'
+  const sessionTrace = langfuse.trace({
+    name: 'Research Session',
   });
 
   // Track initial setup and query refinement
   const setupSpan = sessionTrace.span({ name: 'Initial Setup' });
   const initialQuery = await askQuestion('What would you like to research? ');
-  const breadth = parseInt(await askQuestion('Enter research breadth (recommended 2-10, default 4): '), 10) || 4;
-  const depth = parseInt(await askQuestion('Enter research depth (recommended 1-5, default 2): '), 10) || 2;
-  setupSpan.end({ 
-    output: { 
-      initialQuery, 
-      breadth, 
-      depth 
-    }
+  const breadth =
+    parseInt(
+      await askQuestion(
+        'Enter research breadth (recommended 2-10, default 4): ',
+      ),
+      10,
+    ) || 4;
+  const depth =
+    parseInt(
+      await askQuestion('Enter research depth (recommended 1-5, default 2): '),
+      10,
+    ) || 2;
+  setupSpan.end({
+    output: {
+      initialQuery,
+      breadth,
+      depth,
+    },
   });
 
   // Generate and collect feedback questions
   log(`Creating research plan...`);
-  const feedbackSpan = sessionTrace.span({ 
-    name: 'Generate Feedback Questions'
+  const feedbackSpan = sessionTrace.span({
+    name: 'Generate Feedback Questions',
   });
-  
+
   const followUpQuestions = await generateFeedback({ query: initialQuery });
-  
-  log('\nTo better understand your research needs, please answer these follow-up questions:');
+
+  log(
+    '\nTo better understand your research needs, please answer these follow-up questions:',
+  );
   const answers: string[] = [];
   for (const question of followUpQuestions) {
     const answer = await askQuestion(`\n${question}\nYour answer: `);
     answers.push(answer);
   }
 
-  feedbackSpan.end({ 
-    output: { 
-      questions: followUpQuestions, 
+  feedbackSpan.end({
+    output: {
+      questions: followUpQuestions,
       answers,
-      questionCount: followUpQuestions.length
-    }
+      questionCount: followUpQuestions.length,
+    },
   });
 
   // Combine queries and start research
@@ -79,68 +91,82 @@ ${followUpQuestions.map((q: string, i: number) => `Q: ${q}\nA: ${answers[i]}`).j
 
   log('\nResearching your topic...');
   log('\nStarting research with progress tracking...\n');
-  
+
   // Track the deep research process
-  const researchSpan = sessionTrace.span({ 
+  const researchSpan = sessionTrace.span({
     name: 'Deep Research',
-    input: { 
-      combinedQuery, 
-      breadth, 
-      depth 
-    }
+    input: {
+      query: combinedQuery,
+      breadth,
+      depth,
+    },
   });
 
-  // Track queries and their learnings
-  const queryLearnings = new Map();
+  // Track research metrics
+  const researchMetrics = {
+    queries: new Map(),
+    sourceReliability: {
+      high: 0,
+      medium: 0,
+      low: 0
+    },
+    totalLearnings: 0
+  };
 
-  const { learnings, visitedUrls } = await deepResearch({
+  const { learnings, visitedUrls, sourceMetadata, weightedLearnings } = await deepResearch({
     query: combinedQuery,
     breadth,
     depth,
-    onProgress: (progress) => {
+    onProgress: progress => {
       output.updateProgress(progress);
-      
+
       if (progress.currentQuery && progress.learningsCount) {
-        // Store the learnings for this query with full content
-        queryLearnings.set(progress.currentQuery, {
+        // Track query chain in research span
+        researchSpan.update({
+          output: {
+            queries: {
+              current: progress.currentQuery,
+              parent: progress.parentQuery,
+              depth: progress.currentDepth,
+              learnings: progress.learnings,
+              followUps: progress.followUpQuestions
+            }
+          }
+        });
+
+        // Track metrics
+        researchMetrics.queries.set(progress.currentQuery, {
           query: progress.currentQuery,
           parentQuery: progress.parentQuery,
-          learningsCount: progress.learningsCount,
+          depth: progress.currentDepth,
           learnings: progress.learnings || [],
           followUpQuestions: progress.followUpQuestions || []
         });
-
-        // Create a detailed span for this query iteration
-        const querySpan = researchSpan.span({
-          name: `Query Results`,
-          input: {
-            query: progress.currentQuery,
-            parentQuery: progress.parentQuery,
-            depth: progress.currentDepth,
-            breadth: progress.currentBreadth
-          },
-          output: {
-            learningsCount: progress.learningsCount,
-            learnings: progress.learnings || [],
-            followUpQuestions: progress.followUpQuestions || []
-          }
-        });
-        querySpan.end();
-
-        researchSpan.update({ 
-          output: { 
-            queries: Array.from(queryLearnings.values())
-          }
-        });
+        researchMetrics.totalLearnings += progress.learningsCount;
       }
     },
   });
 
+  // Analyze source reliability distribution
+  sourceMetadata.forEach(source => {
+    if (source.reliabilityScore >= 0.8) researchMetrics.sourceReliability.high++;
+    else if (source.reliabilityScore >= 0.5) researchMetrics.sourceReliability.medium++;
+    else researchMetrics.sourceReliability.low++;
+  });
+
+  // Calculate weighted reliability score
+  const avgReliability = weightedLearnings.reduce((acc, curr) => acc + curr.reliability, 0) / weightedLearnings.length;
+
   researchSpan.end({
     output: {
-      queries: Array.from(queryLearnings.values()),
-      totalQueries: queryLearnings.size,
-      totalLearnings: learnings.length
+      summary: {
+        totalQueries: researchMetrics.queries.size,
+        totalLearnings: learnings.length,
+        uniqueSources: visitedUrls.length,
+        avgReliability,
+        sourceReliability: researchMetrics.sourceReliability
+      },
+      queries: Array.from(researchMetrics.queries.values())
     }
   });
 
@@ -149,13 +175,11 @@ ${followUpQuestions.map((q: string, i: number) => `Q: ${q}\nA: ${answers[i]}`).j
   log('Writing final report...');
 
   // Track report generation
-  const reportSpan = sessionTrace.span({ 
+  const reportSpan = sessionTrace.span({
     name: 'Generate Final Report',
     input: {
       learningCount: learnings.length,
-      sourceCount: visitedUrls.length,
-      learnings,
-      visitedUrls
+      sourceCount: visitedUrls.length
     }
   });
 
@@ -163,6 +187,7 @@ ${followUpQuestions.map((q: string, i: number) => `Q: ${q}\nA: ${answers[i]}`).j
     prompt: combinedQuery,
     learnings,
     visitedUrls,
+    sourceMetadata
   });
 
   await fs.writeFile('output.md', report, 'utf-8');
@@ -170,23 +195,20 @@ ${followUpQuestions.map((q: string, i: number) => `Q: ${q}\nA: ${answers[i]}`).j
   reportSpan.end({
     output: {
       reportLength: report.length,
-      reportSaved: true,
-      learningsIncorporated: learnings.length,
-      report
+      reportSaved: true
     }
   });
 
   // Update final session metrics
   sessionTrace.update({
     output: {
-      totalLearnings: learnings.length,
-      totalUrls: visitedUrls.length,
-      reportGenerated: true,
-      researchDepthAchieved: depth,
-      researchBreadthAchieved: breadth,
-      finalReport: report,
-      allLearnings: learnings,
-      allSources: visitedUrls
+      summary: {
+        totalLearnings: learnings.length,
+        totalSources: visitedUrls.length,
+        avgReliability,
+        sourceReliability: researchMetrics.sourceReliability,
+        reportLength: report.length
+      }
     }
   });
 
