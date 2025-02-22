@@ -50,74 +50,57 @@ flowchart TB
         Q[User Query]
         B[Breadth Parameter]
         D[Depth Parameter]
+        FQ[Feedback Questions]
     end
 
-    DR[Deep Research] -->
-    SQ[SERP Queries] -->
-    SR[Search Results]
-
-    subgraph Processing[Result Processing]
+    subgraph Research[Deep Research]
         direction TB
-        RE[Reliability Evaluation]
-        VQ[Verification Queries]
+        SQ[Generate SERP Queries]
+        SR[Search]
+        RE[Source Reliability Evaluation]
         PR[Process Results]
     end
 
-    SR --> RE
-    RE -->|Low Reliability| VQ
-    RE -->|High Reliability| PR
-    VQ --> PR
-
-    subgraph Results[Results]
+    subgraph Results[Research Output]
         direction TB
-        NL((Learnings))
-        ND((Directions))
-        RC((Reliability Context))
+        L((Learnings with
+        Reliability Scores))
+        SM((Source Metadata))
+        ND((Next Directions:
+        Prior Goals,
+        New Questions))
     end
 
-    PR --> NL
-    PR --> ND
-    PR --> RC
-
-    DP{depth > 0?}
-
-    RD["Next Direction:
-    - Prior Goals
-    - New Questions
-    - Learnings
-    - Reliability Context"]
-
-    MR[Markdown Report]
-
     %% Main Flow
-    Q & B & D --> DR
+    Q & FQ --> CQ[Combined Query]
+    CQ & B & D --> SQ
+    SQ --> SR
+    SR --> RE
+    RE --> PR
 
-    %% Results to Decision
-    NL & ND & RC --> DP
+    %% Results Flow
+    PR --> L
+    PR --> SM
+    PR --> ND
 
-    %% Circular Flow
-    DP -->|Yes| RD
-    RD -->|New Context| DR
-
+    %% Depth Decision and Recursion
+    L & ND --> DP{depth > 0?}
+    DP -->|Yes| SQ
+    
     %% Final Output
-    DP -->|No| MR
+    DP -->|No| MR[Markdown Report]
 
     %% Styling
     classDef input fill:#7bed9f,stroke:#2ed573,color:black
     classDef process fill:#70a1ff,stroke:#1e90ff,color:black
-    classDef recursive fill:#ffa502,stroke:#ff7f50,color:black
     classDef output fill:#ff4757,stroke:#ff6b81,color:black
-    classDef results fill:#a8e6cf,stroke:#3b7a57,color:black
-    classDef reliability fill:#ff9ff3,stroke:#f368e0,color:black
+    classDef results fill:#a8e6cf,stroke:#3b7a57,color:black,width:150px,height:150px
 
-    class Q,B,D input
-    class DR,SQ,PR process
-    class DP,RD recursive
+    class Q,B,D,FQ input
+    class SQ,SR,RE,PR process
     class MR output
-    class NL,ND,RC results
-    class RE,VQ reliability
+    class L,SM,ND results
 ```
-
 ## Advanced Setup
 
 ### Using Local Firecrawl (Free Option)
