@@ -35,8 +35,10 @@ https://modelcontextprotocol.io/quickstart/server
 
 - Performs deep, iterative research by generating targeted search queries
 - Controls research scope with depth (how deep) and breadth (how wide) parameters
+- Evaluates source reliability with detailed scoring (0-1) and reasoning
+- Prioritizes high-reliability sources (≥0.7) and verifies less reliable information
 - Generates follow-up questions to better understand research needs
-- Produces detailed markdown reports with findings and sources
+- Produces detailed markdown reports with findings, sources, and reliability assessments
 - Available as a Model Context Protocol (MCP) tool for AI agents
 - For now MCP version doesn't ask follow up questions
 
@@ -52,23 +54,38 @@ flowchart TB
 
     DR[Deep Research] -->
     SQ[SERP Queries] -->
-    PR[Process Results]
+    SR[Search Results]
+
+    subgraph Processing[Result Processing]
+        direction TB
+        RE[Reliability Evaluation]
+        VQ[Verification Queries]
+        PR[Process Results]
+    end
+
+    SR --> RE
+    RE -->|Low Reliability| VQ
+    RE -->|High Reliability| PR
+    VQ --> PR
 
     subgraph Results[Results]
         direction TB
         NL((Learnings))
         ND((Directions))
+        RC((Reliability Context))
     end
 
     PR --> NL
     PR --> ND
+    PR --> RC
 
     DP{depth > 0?}
 
     RD["Next Direction:
     - Prior Goals
     - New Questions
-    - Learnings"]
+    - Learnings
+    - Reliability Context"]
 
     MR[Markdown Report]
 
@@ -76,7 +93,7 @@ flowchart TB
     Q & B & D --> DR
 
     %% Results to Decision
-    NL & ND --> DP
+    NL & ND & RC --> DP
 
     %% Circular Flow
     DP -->|Yes| RD
@@ -91,12 +108,14 @@ flowchart TB
     classDef recursive fill:#ffa502,stroke:#ff7f50,color:black
     classDef output fill:#ff4757,stroke:#ff6b81,color:black
     classDef results fill:#a8e6cf,stroke:#3b7a57,color:black
+    classDef reliability fill:#ff9ff3,stroke:#f368e0,color:black
 
     class Q,B,D input
     class DR,SQ,PR process
     class DP,RD recursive
     class MR output
-    class NL,ND results
+    class NL,ND,RC results
+    class RE,VQ reliability
 ```
 
 ## Advanced Setup
