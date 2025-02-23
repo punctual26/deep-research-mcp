@@ -161,7 +161,7 @@ Return a reliability score between 0 and 1, where:
 - 0-0.29: Low reliability (e.g. known misinformation sources)`,
     schema: z.object({
       score: z.number().describe('Reliability score between 0 and 1'),
-      reasoning: z.string().describe('Brief explanation of the reliability assessment'),
+      reasoning: z.string().describe('Brief explanation of the reliability assessment, one or two sentences'),
       domainExpertise: z.string().describe('Assessment of domain expertise in this specific topic')
     })
   });
@@ -288,7 +288,6 @@ Weight information by source reliability - be more confident in information from
 export async function writeFinalReport({
   prompt,
   learnings,
-  visitedUrls,
   sourceMetadata,
 }: {
   prompt: string;
@@ -296,29 +295,12 @@ export async function writeFinalReport({
   visitedUrls: string[];
   sourceMetadata: SourceMetadata[];
 }) {
-  log('Starting to generate final report...');
-  log(`Processing ${learnings.length} learnings and ${visitedUrls.length} sources...`);
-  
-  // Analyze source reliability distribution
+  // Quick reliability analysis
   const reliabilityGroups = {
     high: sourceMetadata.filter(m => m.reliabilityScore >= 0.8),
     medium: sourceMetadata.filter(m => m.reliabilityScore >= 0.5 && m.reliabilityScore < 0.8),
     low: sourceMetadata.filter(m => m.reliabilityScore < 0.5)
   };
-
-  const sourceAnalysis = `
-### Source Reliability Distribution
-- High Reliability Sources (0.8-1.0): ${reliabilityGroups.high.length} sources
-- Medium Reliability Sources (0.5-0.79): ${reliabilityGroups.medium.length} sources
-- Lower Reliability Sources (<0.5): ${reliabilityGroups.low.length} sources
-
-### Source Quality Analysis
-${sourceMetadata.length > 0 
-  ? `Overall source quality is ${getOverallQualityAssessment(reliabilityGroups)}. 
-${reliabilityGroups.high.length > 0 
-  ? `The research benefits from ${reliabilityGroups.high.length} highly reliable sources, providing strong foundation for the findings.` 
-  : 'Note: No highly reliable sources were found for this topic, which may affect the confidence in some findings.'}`
-  : 'No source quality data available.'}`;
 
   const learningsString = trimPrompt(
     learnings
@@ -327,19 +309,10 @@ ${reliabilityGroups.high.length > 0
     150_000,
   );
 
-  log('Generating comprehensive report structure and content...');
   const res = await generateObject({
     model: o3MiniModel,
     system: systemPrompt(),
-    prompt: `Given the following prompt from the user, write a final report on the topic using the learnings from research. The report should:
-1. Be highly detailed (aim for 3+ pages)
-2. Include ALL the learnings from research, prioritizing those from highly reliable sources
-3. Have a clear structure with sections and subsections
-4. Include an executive summary at the start
-5. Maintain academic rigor with proper source citations (including reliability scores)
-6. End with conclusions and implications
-7. Include a methodology section explaining how the research was conducted
-8. Consider source reliability in the confidence of conclusions
+    prompt: `Given the following prompt from the user, write a final report on the topic using the learnings from research. Make it as detailed as possible, aim for 3 or more pages, include ALL the learnings from research. Consider source reliability when drawing conclusions - we have ${reliabilityGroups.high.length} highly reliable sources, ${reliabilityGroups.medium.length} medium reliability sources, and ${reliabilityGroups.low.length} lower reliability sources.
 
 <prompt>${prompt}</prompt>
 
@@ -348,64 +321,28 @@ Here are all the learnings from previous research:
 <learnings>\n${learningsString}\n</learnings>`,
     schema: z.object({
       reportMarkdown: z.string().describe('Final report on the topic in Markdown'),
-      executiveSummary: z.string().describe('A concise summary of the key findings'),
-      keyFindings: z.array(z.object({
-        finding: z.string(),
-        confidence: z.enum(['High', 'Medium', 'Low']).describe('Confidence level based on source reliability'),
-      })).describe('List of the most important findings with confidence levels'),
-      researchGaps: z.array(z.string()).describe('Areas that could benefit from further research'),
-      methodology: z.string().describe('Description of the research methodology used'),
-      confidenceAssessment: z.string().describe('Overall assessment of confidence in findings based on source quality')
     }),
   });
 
-  log('Finalizing report with source citations and metadata...');
-  
-  // Create the final report structure
-  const finalReport = [
-    '# ' + prompt.split('\n')[0], // Use first line of prompt as title
-    '\n## Executive Summary\n',
-    res.object.executiveSummary,
-    '\n## Key Findings\n',
-    res.object.keyFindings.map(finding => `- ${finding.finding} _(Confidence: ${finding.confidence})_`).join('\n'),
-    '\n## Methodology\n',
-    res.object.methodology,
-    '\n## Detailed Analysis\n',
-    res.object.reportMarkdown,
-    '\n## Research Gaps and Future Directions\n',
-    res.object.researchGaps.map(gap => `- ${gap}`).join('\n'),
-    '\n## Source Analysis and Quality Assessment\n',
-    sourceAnalysis,
-    res.object.confidenceAssessment,
-    '\n## Sources\n',
-    sourceMetadata
-      .sort((a, b) => b.reliabilityScore - a.reliabilityScore)
-      .map(metadata => 
-        `- ${metadata.domain} (Reliability Score: ${metadata.reliabilityScore.toFixed(2)})
-  - ${metadata.url}
-  - ${metadata.reliabilityReasoning}`
-      )
-      .join('\n'),
-    '\n\n*Report generated on: ' + new Date().toISOString() + '*'
-  ].join('\n');
+  // Add a simple sources section with reliability scores
+  const sourcesSection = '\n\n## Sources\n\n' + sourceMetadata
+    .sort((a, b) => b.reliabilityScore - a.reliabilityScore)
+    .map(metadata => {
+      const parts = [
+        `- ${metadata.url}`,
+        `  - Reliability: ${metadata.reliabilityScore.toFixed(2)} - ${metadata.reliabilityReasoning}`,
+      ];
+      if (metadata.title) {
+        parts.push(`  - Title: ${metadata.title}`);
+      }
+      if (metadata.publishDate) {
+        parts.push(`  - Published: ${metadata.publishDate}`);
+      }
+      return parts.join('\n');
+    })
+    .join('\n\n');
 
-  log('Report generation complete!');
-  return finalReport;
-}
-
-function getOverallQualityAssessment(groups: { 
-  high: SourceMetadata[], 
-  medium: SourceMetadata[], 
-  low: SourceMetadata[] 
-}): string {
-  const total = groups.high.length + groups.medium.length + groups.low.length;
-  const highPercentage = (groups.high.length / total) * 100;
-  const mediumPercentage = (groups.medium.length / total) * 100;
-
-  if (highPercentage >= 60) return "excellent";
-  if (highPercentage >= 40 || (highPercentage + mediumPercentage) >= 70) return "good";
-  if (highPercentage >= 20 || (highPercentage + mediumPercentage) >= 50) return "fair";
-  return "limited";
+  return res.object.reportMarkdown + sourcesSection;
 }
 
 export async function deepResearch({
