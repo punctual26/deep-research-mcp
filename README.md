@@ -1,6 +1,6 @@
 # Open Deep Research MCP Server
 
-An AI-powered research assistant that performs deep, iterative research on any topic. It combines search engines, web scraping, and AI to explore topics in depth and generate comprehensive reports. Available as a Model Context Protocol (MCP) tool or standalone CLI.
+An AI-powered research assistant that performs deep, iterative research on any topic. It combines search engines, web scraping, and AI to explore topics in depth and generate comprehensive reports. Available as a Model Context Protocol (MCP) tool or standalone CLI. Look at exampleout.md to see what a report might look like.
 
 ## Quick Start
 
@@ -100,8 +100,7 @@ flowchart TB
     class SQ,SR,RE,PR process
     class MR output
     class L,SM,ND results
-```
-## Advanced Setup
+```## Advanced Setup
 
 ### Using Local Firecrawl (Free Option)
 
@@ -134,3 +133,4 @@ The app works normally without observability if no Langfuse keys are provided.
 ## License
 
 MIT License
+
