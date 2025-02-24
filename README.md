@@ -100,7 +100,8 @@ flowchart TB
     class SQ,SR,RE,PR process
     class MR output
     class L,SM,ND results
-```## Advanced Setup
+```
+## Advanced Setup
 
 ### Using Local Firecrawl (Free Option)
 
@@ -133,4 +134,3 @@ The app works normally without observability if no Langfuse keys are provided.
 ## License
 
 MIT License
-
