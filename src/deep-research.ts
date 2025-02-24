@@ -363,7 +363,7 @@ export async function writeFinalReport({
   const res = await generateObject({
     model: o3MiniModel,
     system: systemPrompt(),
-    prompt: `Given the following prompt from the user, write a final report on the topic using the learnings from research. Make it as detailed as possible, aim for 3 or more pages, include ALL the learnings from research. Consider source reliability when drawing conclusions - we have ${reliabilityGroups.high.length} highly reliable sources, ${reliabilityGroups.medium.length} medium reliability sources, and ${reliabilityGroups.low.length} lower reliability sources.
+    prompt: `Given the following prompt from the user, write a final report on the topic using the learnings from research. Make it as detailed as possible, aim for 3 or more pages, include ALL the learnings from research. Consider source reliability when drawing conclusions.
 
 <prompt>${prompt}</prompt>
 
