@@ -34,10 +34,9 @@ server.tool(
   {
     query: z.string().min(1).describe("The research query to investigate"),
     depth: z.number().min(1).max(5).describe("How deep to go in the research tree (1-5)"),
-    breadth: z.number().min(1).max(5).describe("How broad to make each research level (1-5)"),
-    existingLearnings: z.array(z.string()).optional().describe("Optional array of existing research findings to build upon")
+    breadth: z.number().min(1).max(5).describe("How broad to make each research level (1-5)")
   },
-  async ({ query, depth, breadth, existingLearnings = [] }) => {
+  async ({ query, depth, breadth }) => {
     try {
       let currentProgress = '';
 
@@ -45,7 +44,6 @@ server.tool(
         query,
         depth,
         breadth,
-        learnings: existingLearnings,
         onProgress: progress => {
           const progressMsg = `Depth ${progress.currentDepth}/${progress.totalDepth}, Query ${progress.completedQueries}/${progress.totalQueries}: ${progress.currentQuery || ''}`;
           if (progressMsg !== currentProgress) {
@@ -87,6 +85,7 @@ server.tool(
           stats: {
             totalLearnings: result.learnings.length,
             totalSources: result.visitedUrls.length,
+            averageReliability: result.weightedLearnings.reduce((acc, curr) => acc + curr.reliability, 0) / result.weightedLearnings.length
           },
         },
       };
@@ -123,4 +122,3 @@ main().catch(error => {
   log('Fatal error in main():', error);
   process.exit(1);
 });
-

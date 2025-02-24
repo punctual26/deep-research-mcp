@@ -69,16 +69,24 @@ type LearningWithReliability = {
   reliability: number;
 };
 
+export type ResearchDirection = {
+  question: string;
+  priority: number;
+  parentGoal?: string;  // Track which research goal led to this question
+};
+
 async function generateSerpQueries({
   query,
   numQueries = 3,
   learnings,
   learningReliabilities,
+  researchDirections = [],
 }: {
   query: string;
   numQueries?: number;
   learnings?: string[];
   learningReliabilities?: number[];
+  researchDirections?: ResearchDirection[];
 }) {
   // Convert to properly typed weighted learnings
   const weightedLearnings: LearningWithReliability[] = learnings && learningReliabilities 
@@ -97,7 +105,20 @@ ${weightedLearnings.length > 0
   ? `Here are previous learnings with their reliability scores (higher score means more reliable):
 ${weightedLearnings.map(l => `[Reliability: ${l.reliability.toFixed(2)}] ${l.content}`).join('\n')}
 
-When generating new queries, prioritize following up on information from more reliable sources (reliability >= 0.7). Be more skeptical of and seek verification for information from less reliable sources (reliability < 0.7). For very low reliability sources (reliability < 0.3), generate queries to find more authoritative sources on the same topics.`
+When generating new queries:
+- Follow up on promising leads from reliable sources (reliability >= 0.7)
+- For less reliable information (reliability < 0.7), consider generating verification queries that are likely to find authoritative sources
+- Make each query specific and targeted to advance the research in a clear direction`
+  : ''}
+
+${researchDirections.length > 0 
+  ? `\nPrioritized research directions to explore (higher priority = more important):
+${researchDirections
+  .sort((a, b) => b.priority - a.priority)
+  .map(d => `[Priority: ${d.priority}] ${d.question}${d.parentGoal ? `\n  (From previous goal: ${d.parentGoal})` : ''}`)
+  .join('\n')}
+
+Focus on generating queries that address these research directions, especially the higher priority ones.`
   : ''}
 
 <prompt>${query}</prompt>`,
@@ -113,23 +134,41 @@ When generating new queries, prioritize following up on information from more re
               ),
             reliabilityThreshold: z
               .number()
-              .describe('Minimum reliability score (between 0 and 1) needed for sources to be considered trustworthy for this query'),
+              .describe('Minimum reliability score (between 0 and 1) needed for sources to be considered trustworthy for this query. Higher values (e.g. 0.7+) for verification queries, lower values (e.g. 0.3) for exploratory queries.'),
             isVerificationQuery: z
               .boolean()
-              .describe('Whether this query is specifically trying to verify information from less reliable sources')
-          }),
+              .describe('Whether this query is specifically trying to verify information from less reliable sources'),
+            relatedDirection: z
+              .string()
+              .nullable()
+              .describe('If this query addresses a specific research direction from the input, specify which one. Set to null if not applicable.')
+          })
         )
-        .describe(`List of SERP queries, max of ${numQueries}`),
+        .describe(`List of SERP queries. Generate at most ${numQueries} queries, but feel free to return less if the original prompt is clear. Each query should be unique and advance the research in a meaningful way.`),
     }),
   });
 
+  // Ensure reliability thresholds are within valid range
+  const validatedQueries = res.object.queries.map(query => ({
+    ...query,
+    reliabilityThreshold: Math.max(0, Math.min(1, query.reliabilityThreshold))
+  }));
+
   // Log more detailed information about query generation
-  const verificationQueries = res.object.queries.filter(q => q.isVerificationQuery);
+  const verificationQueries = validatedQueries.filter(q => q.isVerificationQuery);
   if (verificationQueries.length > 0) {
     log(`Generated ${verificationQueries.length} verification queries to check information from less reliable sources`);
   }
 
-  return res.object.queries;
+  // Log which research directions are being addressed
+  const queriesWithDirections = validatedQueries.filter(q => q.relatedDirection !== null);
+  if (queriesWithDirections.length > 0) {
+    log(`Queries addressing research directions:\n${queriesWithDirections
+      .map(q => `- "${q.query}" addresses: ${q.relatedDirection}`)
+      .join('\n')}`);
+  }
+
+  return validatedQueries;
 }
 
 async function evaluateSourceReliability(domain: string, context: string): Promise<{
@@ -177,11 +216,15 @@ async function processSerpResult({
   result,
   numLearnings = 3,
   numFollowUpQuestions = 3,
+  reliabilityThreshold = 0.3,
+  researchGoal = '',
 }: {
   query: string;
   result: SearchResponse;
   numLearnings?: number;
   numFollowUpQuestions?: number;
+  reliabilityThreshold?: number;
+  researchGoal?: string;
 }): Promise<{
   learnings: string[];
   learningConfidences: number[];
@@ -224,13 +267,13 @@ async function processSerpResult({
     }))
     .filter((item): item is { content: string; metadata: SourceMetadata } => !!item.metadata);
 
-  // Sort by reliability and filter out very unreliable sources
+  // Sort by reliability and filter using the provided threshold
   const sortedContents = contentWithMetadata
     .sort((a, b) => b.metadata.reliabilityScore - a.metadata.reliabilityScore)
-    .filter(item => item.metadata.reliabilityScore >= 0.3) // Filter out very unreliable sources
+    .filter(item => item.metadata.reliabilityScore >= reliabilityThreshold)
     .map(item => item.content);
 
-  log(`Ran ${query}, found ${contents.length} contents (${sourceMetadata.filter(m => m.reliabilityScore >= 0.7).length} from highly reliable sources)`);
+  log(`Ran ${query}, found ${contents.length} contents (${sourceMetadata.filter(m => m.reliabilityScore >= reliabilityThreshold).length} above reliability threshold ${reliabilityThreshold})`);
 
   const res = await generateObject({
     model: o3MiniModel,
@@ -238,7 +281,12 @@ async function processSerpResult({
     system: systemPrompt(),
     prompt: `Given the following contents from a SERP search for the query <query>${query}</query>, generate a list of learnings from the contents. Return a maximum of ${numLearnings} learnings, but feel free to return less if the contents are clear. Make sure each learning is unique and not similar to each other. The learnings should be concise and to the point, as detailed and information dense as possible. Make sure to include any entities like people, places, companies, products, things, etc in the learnings, as well as any exact metrics, numbers, or dates.
 
-Weight information by source reliability - be more confident in information from highly reliable sources and more cautious about information from less reliable sources. If possible, try to verify information from less reliable sources against more reliable ones.
+${researchGoal ? `Research Goal: ${researchGoal}
+This research is specifically aimed at: ${researchGoal}. Focus on findings that contribute to this goal.
+
+` : ''}Weight information by source reliability - be more confident in information from highly reliable sources and more cautious about information from less reliable sources. If possible, try to verify information from less reliable sources against more reliable ones.
+
+Also generate up to ${numFollowUpQuestions} follow-up questions, prioritized by reliability gaps and research needs${researchGoal ? ', keeping in mind the research goal' : ''}.
 
 <contents>${contentWithMetadata
       .map(({ content, metadata }) => 
@@ -259,7 +307,7 @@ Weight information by source reliability - be more confident in information from
           priority: z.number().describe('Priority of this question (1-5) based on current source reliability gaps'),
           reason: z.string().describe('Why this follow-up is needed, especially regarding source reliability')
         }))
-        .describe('Follow-up questions to research, prioritized by reliability gaps'),
+        .describe(`Follow-up questions to research, max of ${numFollowUpQuestions}, prioritized by reliability gaps`),
       sourceQuality: z.object({
         mostReliableSources: z.array(z.string()),
         contentGaps: z.array(z.string()),
@@ -274,13 +322,16 @@ Weight information by source reliability - be more confident in information from
     reliability: l.confidence
   }));
 
+  // Ensure we don't exceed the numFollowUpQuestions limit
+  const limitedFollowUpQuestions = res.object.followUpQuestions.slice(0, numFollowUpQuestions);
+
   return {
     ...res.object,
     sourceMetadata,
     learnings: weightedLearnings.map(l => l.content),
     learningConfidences: weightedLearnings.map(l => l.reliability),
-    followUpQuestions: res.object.followUpQuestions.map(q => q.question),
-    followUpPriorities: res.object.followUpQuestions.map(q => q.priority),
+    followUpQuestions: limitedFollowUpQuestions.map(q => q.question),
+    followUpPriorities: limitedFollowUpQuestions.map(q => q.priority),
     weightedLearnings
   };
 }
@@ -353,6 +404,7 @@ export async function deepResearch({
   learningReliabilities = [],
   visitedUrls = [],
   weightedLearnings = [],
+  researchDirections = [],  // Add structured research directions
   onProgress,
 }: {
   query: string;
@@ -362,6 +414,7 @@ export async function deepResearch({
   learningReliabilities?: number[];
   visitedUrls?: string[];
   weightedLearnings?: LearningWithReliability[];
+  researchDirections?: ResearchDirection[];  // New parameter
   onProgress?: (progress: ResearchProgress) => void;
 }): Promise<{
   learnings: string[];
@@ -389,6 +442,7 @@ export async function deepResearch({
     learnings,
     learningReliabilities,
     numQueries: breadth,
+    researchDirections,  // Pass research directions to influence query generation
   });
 
   reportProgress({
@@ -404,8 +458,10 @@ export async function deepResearch({
         try {
           const result = await firecrawl.search(serpQuery.query, {
             timeout: 15000,
-            limit: 5,
-            scrapeOptions: { formats: ['markdown'] },
+            limit: serpQuery.isVerificationQuery ? 8 : 5,
+            scrapeOptions: { 
+              formats: ['markdown']
+            },
           });
 
           // Collect URLs from this search
@@ -417,6 +473,8 @@ export async function deepResearch({
             query: serpQuery.query,
             result,
             numFollowUpQuestions: newBreadth,
+            reliabilityThreshold: serpQuery.reliabilityThreshold,
+            researchGoal: serpQuery.researchGoal,
           });
           
           const allLearnings = [...learnings, ...processedResult.learnings];
@@ -453,6 +511,11 @@ Follow-up research directions: ${processedResult.followUpQuestions.map(q => `\n$
               learningReliabilities: processedResult.learningConfidences,
               visitedUrls: allUrls,
               weightedLearnings: allWeightedLearnings,
+              researchDirections: processedResult.followUpQuestions.map((q, i) => ({
+                question: q,
+                priority: processedResult.followUpPriorities[i] || 3, // Default priority if undefined
+                parentGoal: serpQuery.researchGoal
+              })),
               onProgress,
             });
           } else {
