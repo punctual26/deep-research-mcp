@@ -31,6 +31,12 @@ npm run start "Your research query here"
 Follow the guide thats at the bottom of server quickstart to add the server to Claude Desktop:  
 https://modelcontextprotocol.io/quickstart/server
 
+For remote servers: Streamable HTTP
+```bash
+npm run start:http
+```
+Server runs on `http://localhost:3000/mcp` without session management.
+
 ## Features
 
 - Performs deep, iterative research by generating targeted search queries
