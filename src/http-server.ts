@@ -20,7 +20,7 @@ function createServer(): McpServer {
   const server = new McpServer({
     name: 'deep-research',
     version: '1.0.0',
-  });
+  }, { capabilities: { logging: {} } });
 
   // Define the deep research tool
   server.tool(
@@ -31,7 +31,7 @@ function createServer(): McpServer {
       depth: z.number().min(1).max(5).describe("How deep to go in the research tree (1-5)"),
       breadth: z.number().min(1).max(5).describe("How broad to make each research level (1-5)")
     },
-    async ({ query, depth, breadth }) => {
+    async ({ query, depth, breadth }, { sendNotification }) => {
       try {
         let currentProgress = '';
 
@@ -39,23 +39,23 @@ function createServer(): McpServer {
           query,
           depth,
           breadth,
-          onProgress: progress => {
+          onProgress: async progress => {
             const progressMsg = `Depth ${progress.currentDepth}/${progress.totalDepth}, Query ${progress.completedQueries}/${progress.totalQueries}: ${progress.currentQuery || ''}`;
             if (progressMsg !== currentProgress) {
               currentProgress = progressMsg;
               log(progressMsg);
 
-              server.server
-                .notification({
-                  method: 'notifications/progress',
+              try {
+                await sendNotification({
+                  method: 'notifications/message',
                   params: {
-                    progressToken: 0,
+                    level: 'info',
                     data: progressMsg,
                   },
-                })
-                .catch(error => {
-                  log('Error sending progress notification:', error);
                 });
+              } catch (error) {
+                log('Error sending progress notification:', error);
+              }
             }
           },
         });
@@ -117,22 +117,19 @@ const app = express();
 app.use(express.json());
 
 app.post('/mcp', async (req: Request, res: Response) => {
-  // In stateless mode, create a new instance of transport and server for each request
-  // to ensure complete isolation. A single instance would cause request ID collisions
-  // when multiple clients connect concurrently.
-  
+  const server = createServer();
   try {
-    const server = createServer(); 
     const transport: StreamableHTTPServerTransport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
     });
+    await server.connect(transport);
+    await transport.handleRequest(req, res, req.body);
+    
     res.on('close', () => {
       log('Request closed');
       transport.close();
       server.close();
     });
-    await server.connect(transport);
-    await transport.handleRequest(req, res, req.body);
   } catch (error) {
     log('Error handling MCP request:', error);
     if (!res.headersSent) {
@@ -176,4 +173,10 @@ app.delete('/mcp', async (req: Request, res: Response) => {
 const PORT = 3000;
 app.listen(PORT, () => {
   log(`Deep Research MCP Stateless Streamable HTTP Server listening on port ${PORT}`);
+});
+
+// Handle server shutdown
+process.on('SIGINT', async () => {
+  log('Shutting down server...');
+  process.exit(0);
 }); 

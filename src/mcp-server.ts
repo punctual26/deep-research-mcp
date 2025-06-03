@@ -25,7 +25,7 @@ log('Environment check:', {
 const server = new McpServer({
   name: 'deep-research',
   version: '1.0.0',
-});
+}, { capabilities: { logging: {} } });
 
 // Define the deep research tool
 server.tool(
@@ -36,7 +36,7 @@ server.tool(
     depth: z.number().min(1).max(5).describe("How deep to go in the research tree (1-5)"),
     breadth: z.number().min(1).max(5).describe("How broad to make each research level (1-5)")
   },
-  async ({ query, depth, breadth }) => {
+  async ({ query, depth, breadth }, { sendNotification }) => {
     try {
       let currentProgress = '';
 
@@ -44,23 +44,23 @@ server.tool(
         query,
         depth,
         breadth,
-        onProgress: progress => {
+        onProgress: async progress => {
           const progressMsg = `Depth ${progress.currentDepth}/${progress.totalDepth}, Query ${progress.completedQueries}/${progress.totalQueries}: ${progress.currentQuery || ''}`;
           if (progressMsg !== currentProgress) {
             currentProgress = progressMsg;
             log(progressMsg);
 
-            server.server
-              .notification({
-                method: 'notifications/progress',
+            try {
+              await sendNotification({
+                method: 'notifications/message',
                 params: {
-                  progressToken: 0,
+                  level: 'info',
                   data: progressMsg,
                 },
-              })
-              .catch(error => {
-                log('Error sending progress notification:', error);
               });
+            } catch (error) {
+              log('Error sending progress notification:', error);
+            }
           }
         },
       });
@@ -117,6 +117,13 @@ async function main() {
     process.exit(1);
   }
 }
+
+// Handle server shutdown
+process.on('SIGINT', async () => {
+  log('Shutting down server...');
+  await server.close();
+  process.exit(0);
+});
 
 main().catch(error => {
   log('Fatal error in main():', error);
