@@ -7,7 +7,7 @@ import { compact } from 'lodash-es';
 import pLimit from 'p-limit';
 import { z } from 'zod';
 
-import { o3MiniModel, trimPrompt } from './ai/providers.js';
+import { o4MiniModel, trimPrompt } from './ai/providers.js';
 import { firecrawl as firecrawlConfig } from './config.js';
 import { OutputManager } from './output-manager.js';
 import { systemPrompt } from './prompt.js';
@@ -38,11 +38,6 @@ export type ResearchProgress = {
   learningsCount?: number; // Track learnings for this branch
   learnings?: string[]; // The actual learnings content
   followUpQuestions?: string[]; // Follow-up questions generated
-};
-
-type ResearchResult = {
-  learnings: string[];
-  visitedUrls: string[];
 };
 
 type SourceMetadata = {
@@ -97,7 +92,7 @@ async function generateSerpQueries({
     : [];
 
   const res = await generateObject({
-    model: o3MiniModel,
+    model: o4MiniModel,
     system: systemPrompt(),
     prompt: `Given the following prompt from the user, generate a list of SERP queries to research the topic. Return a maximum of ${numQueries} queries, but feel free to return less if the original prompt is clear. Make sure each query is unique and not similar to each other.
 
@@ -176,7 +171,7 @@ async function evaluateSourceReliability(domain: string, context: string): Promi
   reasoning: string;
 }> {
   const res = await generateObject({
-    model: o3MiniModel,
+    model: o4MiniModel,
     system: systemPrompt(),
     prompt: `Evaluate the reliability of the following source domain for research about: "${context}"
 
@@ -276,7 +271,7 @@ async function processSerpResult({
   log(`Ran ${query}, found ${contents.length} contents (${sourceMetadata.filter(m => m.reliabilityScore >= reliabilityThreshold).length} above reliability threshold ${reliabilityThreshold})`);
 
   const res = await generateObject({
-    model: o3MiniModel,
+    model: o4MiniModel,
     abortSignal: AbortSignal.timeout(60_000),
     system: systemPrompt(),
     prompt: `Given the following contents from a SERP search for the query <query>${query}</query>, generate a list of learnings from the contents. Return a maximum of ${numLearnings} learnings, but feel free to return less if the contents are clear. Make sure each learning is unique and not similar to each other. The learnings should be concise and to the point, as detailed and information dense as possible. Make sure to include any entities like people, places, companies, products, things, etc in the learnings, as well as any exact metrics, numbers, or dates.
@@ -361,7 +356,7 @@ export async function writeFinalReport({
   );
 
   const res = await generateObject({
-    model: o3MiniModel,
+    model: o4MiniModel,
     system: systemPrompt(),
     prompt: `Given the following prompt from the user, write a final report on the topic using the learnings from research. Make it as detailed as possible, aim for 3 or more pages, include ALL the learnings from research. Consider source reliability when drawing conclusions.
 

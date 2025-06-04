@@ -25,7 +25,7 @@ npm run build
 
 4. Run the cli version:
 ```bash
-npm run start "Your research query here"
+npm run start
 ```
 5. Test MCP Server with Claude Desktop:  
 Follow the guide thats at the bottom of server quickstart to add the server to Claude Desktop:  

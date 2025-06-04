@@ -15,7 +15,7 @@ const openai = createOpenAI({
   baseURL: process.env.OPENAI_ENDPOINT || 'https://api.openai.com/v1',
 } as CustomOpenAIProviderSettings);
 
-const customModel = process.env.OPENAI_MODEL || 'o3-mini';
+const customModel = process.env.OPENAI_MODEL || 'o4-mini-2025-04-16';
 
 // Create model with Langfuse instrumentation
 const baseModel = openai(customModel, {
@@ -23,7 +23,7 @@ const baseModel = openai(customModel, {
   structuredOutputs: true,
 });
 
-export const o3MiniModel = {
+export const o4MiniModel = {
   ...baseModel,
   defaultObjectGenerationMode: 'json',
   async doGenerate(options) {
