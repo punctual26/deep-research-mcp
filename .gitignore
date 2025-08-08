@@ -42,4 +42,4 @@ yarn-error.log*
 bun.lockb
 
 # Tasks
-tasks.md
+/tasks

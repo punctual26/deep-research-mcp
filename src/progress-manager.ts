@@ -76,3 +76,4 @@ export class ProgressManager {
     process.stdout.write(`\x1B[${this.progressLines}B\n`);
   }
 }
+  

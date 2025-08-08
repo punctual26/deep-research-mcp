@@ -1,52 +1,87 @@
-import { createOpenAI, type OpenAIProviderSettings } from '@ai-sdk/openai';
-import { type LanguageModelV1 } from '@ai-sdk/provider';
+import { createOpenAI } from '@ai-sdk/openai';
+import { createAnthropic } from '@ai-sdk/anthropic';
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import { xai} from '@ai-sdk/xai';
+import { type LanguageModelV2 } from '@ai-sdk/provider';
 import { getEncoding } from 'js-tiktoken';
 
 import langfuse from './observability.js';
 import { RecursiveCharacterTextSplitter } from './text-splitter.js';
 
-interface CustomOpenAIProviderSettings extends OpenAIProviderSettings {
-  baseURL?: string;
-}
-
-// Create OpenAI provider
-const openai = createOpenAI({
-  apiKey: process.env.OPENAI_API_KEY!,
-  baseURL: process.env.OPENAI_ENDPOINT || 'https://api.openai.com/v1',
-} as CustomOpenAIProviderSettings);
-
-const customModel = process.env.OPENAI_MODEL || 'o4-mini-2025-04-16';
-
-// Create model with Langfuse instrumentation
-const baseModel = openai(customModel, {
-  reasoningEffort: customModel.startsWith('o') ? 'medium' : undefined,
-  structuredOutputs: true,
-});
-
-export const o4MiniModel = {
-  ...baseModel,
-  defaultObjectGenerationMode: 'json',
-  async doGenerate(options) {
+function wrapWithLangfuse(model: any, modelName: string): LanguageModelV2 {
+  // Preserve original methods and metadata
+  const originalDoGenerate = model.doGenerate?.bind(model);
+  (model as any).defaultObjectGenerationMode = 'json';
+  (model as any).doGenerate = async (options: any) => {
     const generation = langfuse.generation({
       name: 'LLM Generation',
-      model: customModel,
+      model: modelName,
       input: options,
-      modelParameters: {
-        reasoningEffort: customModel.startsWith('o') ? 'medium' : undefined,
-        structuredOutputs: true,
-      },
+      modelParameters: (options as any)?.providerMetadata ?? {},
     });
 
     try {
-      const result = await baseModel.doGenerate(options);
+      const result = await originalDoGenerate(options);
       generation.end({ output: result });
       return result;
     } catch (error) {
       generation.end({ metadata: { error: String(error) } });
       throw error;
     }
-  },
-} as LanguageModelV1;
+  };
+  return model as LanguageModelV2;
+}
+
+export function getModel(modelSpecifier?: string): LanguageModelV2 {
+  // Accept formats like "openai:o4-mini-2025-04-16", "openai/o4-mini-2025-04-16", or just model name (defaults to openai)
+  const spec = (modelSpecifier || '').trim();
+  const hasProvider = spec.includes(':') || spec.includes('/');
+  const [providerRaw, nameRaw] = hasProvider
+    ? spec.split(/[:/]/, 2)
+    : ['openai', spec];
+  const provider = (providerRaw || 'openai').toLowerCase();
+
+  // default names
+  const defaults = {
+    openai: process.env.OPENAI_MODEL || 'gpt-5',
+    anthropic: 'claude-3-haiku-20240307',
+    google: 'gemini-1.5-flash',
+    xai: 'grok-2-latest',
+  } as const;
+
+  const modelName = nameRaw && nameRaw.length > 0 ? nameRaw : (defaults as any)[provider] || defaults.openai;
+
+  switch (provider) {
+    case 'openai': {
+      const openai = createOpenAI({
+        apiKey: process.env.OPENAI_API_KEY!,
+      });
+      const model = openai(modelName as any);
+      return wrapWithLangfuse(model, `openai/${modelName}`);
+    }
+    case 'xai': {
+      const model = xai(modelName as any);
+      return wrapWithLangfuse(model, `xai/${modelName}`);
+    }
+    case 'anthropic': {
+      const anthropic = createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+      const model = anthropic(modelName as any);
+      return wrapWithLangfuse(model, `anthropic/${modelName}`);
+    }
+    case 'google': {
+      const google = createGoogleGenerativeAI({ apiKey: process.env.GOOGLE_API_KEY! });
+      const model = google(modelName as any);
+      return wrapWithLangfuse(model, `google/${modelName}`);
+    }
+    default:
+      throw new Error(`Unsupported provider in model specifier: ${provider}`);
+  }
+}
+
+export function getDefaultModel(): LanguageModelV2 {
+  return getModel(`openai:${process.env.OPENAI_MODEL || 'gpt-5'}`);
+}
+
 
 const MinChunkSize = 140;
 const encoder = getEncoding('o200k_base');
@@ -66,7 +101,6 @@ export function trimPrompt(
   }
 
   const overflowTokens = length - contextSize;
-  // on average it's 3 characters per token, so multiply by 3 to get a rough estimate of the number of characters
   const chunkSize = prompt.length - overflowTokens * 3;
   if (chunkSize < MinChunkSize) {
     return prompt.slice(0, MinChunkSize);
@@ -78,11 +112,9 @@ export function trimPrompt(
   });
   const trimmedPrompt = splitter.splitText(prompt)[0] ?? '';
 
-  // last catch, there's a chance that the trimmed prompt is same length as the original prompt, due to how tokens are split & innerworkings of the splitter, handle this case by just doing a hard cut
   if (trimmedPrompt.length === prompt.length) {
     return trimPrompt(prompt.slice(0, chunkSize), contextSize);
   }
 
-  // recursively trim until the prompt is within the context size
   return trimPrompt(trimmedPrompt, contextSize);
 }

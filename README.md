@@ -48,6 +48,22 @@ Server runs on `http://localhost:3000/mcp` without session management.
 - Available as a Model Context Protocol (MCP) tool for AI agents
 - For now MCP version doesn't ask follow up questions
 
+### Model Selection (OpenAI, Anthropic, Google, xAI)
+
+Pick a provider and model per run.
+
+- CLI: you will be prompted for provider and model. Example: `openai` + `gpt-5`.
+- MCP/HTTP: pass `model`, e.g. `openai:gpt-5`,
+
+Set the corresponding API key in `.env.local`:
+
+```
+OPENAI_API_KEY=...
+ANTHROPIC_API_KEY=...
+GOOGLE_API_KEY=...
+XAI_API_KEY=...
+```
+
 ## How It Works
 
 ```mermaid

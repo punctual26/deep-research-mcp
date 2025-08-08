@@ -7,7 +7,8 @@ import { compact } from 'lodash-es';
 import pLimit from 'p-limit';
 import { z } from 'zod';
 
-import { o4MiniModel, trimPrompt } from './ai/providers.js';
+import { getDefaultModel, trimPrompt } from './ai/providers.js';
+import type { LanguageModelV2 } from '@ai-sdk/provider';
 import { firecrawl as firecrawlConfig } from './config.js';
 import { OutputManager } from './output-manager.js';
 import { systemPrompt } from './prompt.js';
@@ -76,12 +77,14 @@ async function generateSerpQueries({
   learnings,
   learningReliabilities,
   researchDirections = [],
+  model,
 }: {
   query: string;
   numQueries?: number;
   learnings?: string[];
   learningReliabilities?: number[];
   researchDirections?: ResearchDirection[];
+  model: LanguageModelV2;
 }) {
   // Convert to properly typed weighted learnings
   const weightedLearnings: LearningWithReliability[] = learnings && learningReliabilities 
@@ -92,7 +95,7 @@ async function generateSerpQueries({
     : [];
 
   const res = await generateObject({
-    model: o4MiniModel,
+    model,
     system: systemPrompt(),
     prompt: `Given the following prompt from the user, generate a list of SERP queries to research the topic. Return a maximum of ${numQueries} queries, but feel free to return less if the original prompt is clear. Make sure each query is unique and not similar to each other.
 
@@ -166,12 +169,12 @@ Focus on generating queries that address these research directions, especially t
   return validatedQueries;
 }
 
-async function evaluateSourceReliability(domain: string, context: string): Promise<{
+async function evaluateSourceReliability(domain: string, context: string, model: LanguageModelV2): Promise<{
   score: number;
   reasoning: string;
 }> {
   const res = await generateObject({
-    model: o4MiniModel,
+    model,
     system: systemPrompt(),
     prompt: `Evaluate the reliability of the following source domain for research about: "${context}"
 
@@ -213,6 +216,7 @@ async function processSerpResult({
   numFollowUpQuestions = 3,
   reliabilityThreshold = 0.3,
   researchGoal = '',
+  model,
 }: {
   query: string;
   result: SearchResponse;
@@ -220,6 +224,7 @@ async function processSerpResult({
   numFollowUpQuestions?: number;
   reliabilityThreshold?: number;
   researchGoal?: string;
+  model: LanguageModelV2;
 }): Promise<{
   learnings: string[];
   learningConfidences: number[];
@@ -237,7 +242,7 @@ async function processSerpResult({
     if (!item.url) return null;
     try {
       const domain = new URL(item.url).hostname;
-      const reliability = await evaluateSourceReliability(domain, query);
+      const reliability = await evaluateSourceReliability(domain, query, model);
       return {
         url: item.url,
         title: item.title || undefined,
@@ -271,7 +276,7 @@ async function processSerpResult({
   log(`Ran ${query}, found ${contents.length} contents (${sourceMetadata.filter(m => m.reliabilityScore >= reliabilityThreshold).length} above reliability threshold ${reliabilityThreshold})`);
 
   const res = await generateObject({
-    model: o4MiniModel,
+    model,
     abortSignal: AbortSignal.timeout(60_000),
     system: systemPrompt(),
     prompt: `Given the following contents from a SERP search for the query <query>${query}</query>, generate a list of learnings from the contents. Return a maximum of ${numLearnings} learnings, but feel free to return less if the contents are clear. Make sure each learning is unique and not similar to each other. The learnings should be concise and to the point, as detailed and information dense as possible. Make sure to include any entities like people, places, companies, products, things, etc in the learnings, as well as any exact metrics, numbers, or dates.
@@ -335,11 +340,13 @@ export async function writeFinalReport({
   prompt,
   learnings,
   sourceMetadata,
+  model,
 }: {
   prompt: string;
   learnings: string[];
   visitedUrls: string[];
   sourceMetadata: SourceMetadata[];
+  model: LanguageModelV2;
 }) {
   // Quick reliability analysis
   const reliabilityGroups = {
@@ -356,7 +363,7 @@ export async function writeFinalReport({
   );
 
   const res = await generateObject({
-    model: o4MiniModel,
+    model,
     system: systemPrompt(),
     prompt: `Given the following prompt from the user, write a final report on the topic using the learnings from research. Make it as detailed as possible, aim for 3 or more pages, include ALL the learnings from research. Consider source reliability when drawing conclusions.
 
@@ -401,6 +408,7 @@ export async function deepResearch({
   weightedLearnings = [],
   researchDirections = [],  // Add structured research directions
   onProgress,
+  model: providedModel,
 }: {
   query: string;
   breadth: number;
@@ -411,6 +419,7 @@ export async function deepResearch({
   weightedLearnings?: LearningWithReliability[];
   researchDirections?: ResearchDirection[];  // New parameter
   onProgress?: (progress: ResearchProgress) => void;
+  model?: LanguageModelV2;
 }): Promise<{
   learnings: string[];
   learningReliabilities: number[];
@@ -418,6 +427,7 @@ export async function deepResearch({
   sourceMetadata: SourceMetadata[];
   weightedLearnings: LearningWithReliability[];
 }> {
+  const model = providedModel ?? getDefaultModel();
   const progress: ResearchProgress = {
     currentDepth: depth,
     totalDepth: depth,
@@ -438,6 +448,7 @@ export async function deepResearch({
     learningReliabilities,
     numQueries: breadth,
     researchDirections,  // Pass research directions to influence query generation
+    model,
   });
 
   reportProgress({
@@ -470,6 +481,7 @@ export async function deepResearch({
             numFollowUpQuestions: newBreadth,
             reliabilityThreshold: serpQuery.reliabilityThreshold,
             researchGoal: serpQuery.researchGoal,
+            model,
           });
           
           const allLearnings = [...learnings, ...processedResult.learnings];
@@ -512,6 +524,7 @@ Follow-up research directions: ${processedResult.followUpQuestions.map(q => `\n$
                 parentGoal: serpQuery.researchGoal
               })),
               onProgress,
+              model,
             });
           } else {
             reportProgress({

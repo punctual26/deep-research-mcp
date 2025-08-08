@@ -11,7 +11,10 @@ config({ path: resolve(__dirname, '../.env.local') });
 
 // Define and validate the environment schema
 const envSchema = z.object({
-  OPENAI_API_KEY: z.string().min(1),
+  OPENAI_API_KEY: z.string().optional(),
+  ANTHROPIC_API_KEY: z.string().optional(),
+  GOOGLE_API_KEY: z.string().optional(),
+  XAI_API_KEY: z.string().optional(),
   FIRECRAWL_BASE_URL: z.string().url().optional(),
   FIRECRAWL_KEY: z.string().optional(),
   FIRECRAWL_CONCURRENCY: z.string().transform(Number).default('2'),
@@ -26,6 +29,15 @@ const env = envSchema.parse(process.env);
 export const Config = {
   openai: {
     apiKey: env.OPENAI_API_KEY,
+  },
+  anthropic: {
+    apiKey: env.ANTHROPIC_API_KEY,
+  },
+  google: {
+    apiKey: env.GOOGLE_API_KEY,
+  },
+  xai: {
+    apiKey: env.XAI_API_KEY,
   },
   firecrawl: {
     baseUrl: env.FIRECRAWL_BASE_URL,

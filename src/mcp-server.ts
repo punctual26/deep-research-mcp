@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import { Config } from './config.js';
 import { deepResearch, writeFinalReport } from './deep-research.js';
+import { getModel } from './ai/providers.js';
 
 // Helper function to log to stderr
 const log = (...args: any[]) => {
@@ -34,16 +35,19 @@ server.tool(
   {
     query: z.string().min(1).describe("The research query to investigate"),
     depth: z.number().min(1).max(5).describe("How deep to go in the research tree (1-5)"),
-    breadth: z.number().min(1).max(5).describe("How broad to make each research level (1-5)")
+    breadth: z.number().min(1).max(5).describe("How broad to make each research level (1-5)"),
+    model: z.string().optional().describe('Model specifier, e.g. "openai:gpt-5"')
   },
-  async ({ query, depth, breadth }, { sendNotification }) => {
+  async ({ query, depth, breadth, model: modelSpec }, { sendNotification }) => {
     try {
       let currentProgress = '';
 
+      const model = getModel(modelSpec);
       const result = await deepResearch({
         query,
         depth,
         breadth,
+        model,
         onProgress: async progress => {
           const progressMsg = `Depth ${progress.currentDepth}/${progress.totalDepth}, Query ${progress.completedQueries}/${progress.totalQueries}: ${progress.currentQuery || ''}`;
           if (progressMsg !== currentProgress) {
@@ -69,7 +73,8 @@ server.tool(
         prompt: query,
         learnings: result.learnings,
         visitedUrls: result.visitedUrls,
-        sourceMetadata: result.sourceMetadata
+        sourceMetadata: result.sourceMetadata,
+        model
       });
 
       return {

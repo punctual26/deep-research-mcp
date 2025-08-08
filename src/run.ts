@@ -3,6 +3,7 @@ import * as readline from 'readline';
 
 import langfuse from './ai/observability.js';
 import { deepResearch, writeFinalReport } from './deep-research.js';
+import { getModel } from './ai/providers.js';
 import { generateFeedback } from './feedback.js';
 import { OutputManager } from './output-manager.js';
 
@@ -49,6 +50,11 @@ async function run() {
       await askQuestion('Enter research depth (recommended 1-5, default 2): '),
       10,
     ) || 2;
+
+  const chosenProvider = (await askQuestion('Model provider (openai|anthropic|google|xai) [openai]: ')).trim() || 'openai';
+  const chosenModelName = (await askQuestion('Model name (enter for default): ')).trim();
+  const modelSpecifier = chosenModelName ? `${chosenProvider}:${chosenModelName}` : `${chosenProvider}`;
+  const model = getModel(modelSpecifier);
   setupSpan.end({
     output: {
       initialQuery,
@@ -63,7 +69,7 @@ async function run() {
     name: 'Generate Feedback Questions',
   });
 
-  const followUpQuestions = await generateFeedback({ query: initialQuery });
+  const followUpQuestions = await generateFeedback({ query: initialQuery, model });
 
   log(
     '\nTo better understand your research needs, please answer these follow-up questions:',
@@ -117,6 +123,7 @@ ${followUpQuestions.map((q: string, i: number) => `Q: ${q}\nA: ${answers[i]}`).j
     query: combinedQuery,
     breadth,
     depth,
+    model,
     onProgress: progress => {
       output.updateProgress(progress);
 
@@ -187,7 +194,8 @@ ${followUpQuestions.map((q: string, i: number) => `Q: ${q}\nA: ${answers[i]}`).j
     prompt: combinedQuery,
     learnings,
     visitedUrls,
-    sourceMetadata
+    sourceMetadata,
+    model
   });
 
   await fs.writeFile('output.md', report, 'utf-8');
