@@ -65,6 +65,30 @@ type LearningWithReliability = {
   reliability: number;
 };
 
+// Optional token budget tracking for the research phase
+type BudgetState = {
+  tokenBudget?: number;
+  usedTokens: number;
+  reached: boolean;
+};
+
+function recordUsage(budget: BudgetState | undefined, usage: any) {
+  if (!budget || !usage) return;
+  const total =
+    (typeof usage.totalTokens === 'number' && usage.totalTokens) ||
+    ((usage.inputTokens || 0) + (usage.outputTokens || 0));
+  if (typeof total === 'number' && total > 0) {
+    budget.usedTokens += total;
+    if (
+      typeof budget.tokenBudget === 'number' &&
+      budget.tokenBudget > 0 &&
+      budget.usedTokens >= budget.tokenBudget
+    ) {
+      budget.reached = true;
+    }
+  }
+}
+
 export type ResearchDirection = {
   question: string;
   priority: number;
@@ -78,6 +102,7 @@ async function generateSerpQueries({
   learningReliabilities,
   researchDirections = [],
   model,
+  budget,
 }: {
   query: string;
   numQueries?: number;
@@ -85,6 +110,7 @@ async function generateSerpQueries({
   learningReliabilities?: number[];
   researchDirections?: ResearchDirection[];
   model: LanguageModelV2;
+  budget?: BudgetState;
 }) {
   // Convert to properly typed weighted learnings
   const weightedLearnings: LearningWithReliability[] = learnings && learningReliabilities 
@@ -146,6 +172,9 @@ Focus on generating queries that address these research directions, especially t
     }),
   });
 
+  // Count usage for this research-phase call
+  recordUsage(budget, (res as any)?.usage);
+
   // Ensure reliability thresholds are within valid range
   const validatedQueries = res.object.queries.map(query => ({
     ...query,
@@ -169,7 +198,7 @@ Focus on generating queries that address these research directions, especially t
   return validatedQueries;
 }
 
-async function evaluateSourceReliability(domain: string, context: string, model: LanguageModelV2): Promise<{
+async function evaluateSourceReliability(domain: string, context: string, model: LanguageModelV2, budget?: BudgetState): Promise<{
   score: number;
   reasoning: string;
 }> {
@@ -203,6 +232,9 @@ Return a reliability score between 0 and 1, where:
     })
   });
 
+  // Count usage (research phase)
+  recordUsage(budget, (res as any)?.usage);
+
   return {
     score: res.object.score,
     reasoning: res.object.reasoning
@@ -217,6 +249,7 @@ async function processSerpResult({
   reliabilityThreshold = 0.3,
   researchGoal = '',
   model,
+  budget,
 }: {
   query: string;
   result: SearchResponse;
@@ -225,6 +258,7 @@ async function processSerpResult({
   reliabilityThreshold?: number;
   researchGoal?: string;
   model: LanguageModelV2;
+  budget?: BudgetState;
 }): Promise<{
   learnings: string[];
   learningConfidences: number[];
@@ -242,7 +276,7 @@ async function processSerpResult({
     if (!item.url) return null;
     try {
       const domain = new URL(item.url).hostname;
-      const reliability = await evaluateSourceReliability(domain, query, model);
+      const reliability = await evaluateSourceReliability(domain, query, model, budget);
       return {
         url: item.url,
         title: item.title || undefined,
@@ -315,6 +349,9 @@ Also generate up to ${numFollowUpQuestions} follow-up questions, prioritized by 
       })
     }),
   });
+
+  // Count usage for this research-phase call
+  recordUsage(budget, (res as any)?.usage);
 
   // Create properly typed weighted learnings
   const weightedLearnings: LearningWithReliability[] = res.object.learnings.map(l => ({
@@ -409,6 +446,8 @@ export async function deepResearch({
   researchDirections = [],  // Add structured research directions
   onProgress,
   model: providedModel,
+  tokenBudget,
+  budgetState,
 }: {
   query: string;
   breadth: number;
@@ -420,14 +459,22 @@ export async function deepResearch({
   researchDirections?: ResearchDirection[];  // New parameter
   onProgress?: (progress: ResearchProgress) => void;
   model?: LanguageModelV2;
+  tokenBudget?: number; // Optional soft cap for research-phase tokens
+  budgetState?: BudgetState; // internal shared state for recursion
 }): Promise<{
   learnings: string[];
   learningReliabilities: number[];
   visitedUrls: string[];
   sourceMetadata: SourceMetadata[];
   weightedLearnings: LearningWithReliability[];
+  budget?: { usedTokens: number; tokenBudget?: number; reached: boolean };
 }> {
   const model = providedModel ?? getDefaultModel();
+  // initialize/reuse token budget for this research session
+  const budget: BudgetState | undefined =
+    typeof tokenBudget === 'number' || budgetState
+      ? budgetState ?? { tokenBudget, usedTokens: 0, reached: false }
+      : undefined;
   const progress: ResearchProgress = {
     currentDepth: depth,
     totalDepth: depth,
@@ -449,6 +496,7 @@ export async function deepResearch({
     numQueries: breadth,
     researchDirections,  // Pass research directions to influence query generation
     model,
+    budget,
   });
 
   reportProgress({
@@ -461,6 +509,15 @@ export async function deepResearch({
   const results = await Promise.all(
     serpQueries.map(serpQuery =>
       limit(async () => {
+        if (budget?.reached) {
+          return {
+            learnings: [],
+            learningReliabilities: [],
+            visitedUrls: [],
+            sourceMetadata: [],
+            weightedLearnings: []
+          };
+        }
         try {
           const result = await firecrawl.search(serpQuery.query, {
             timeout: 15000,
@@ -482,12 +539,31 @@ export async function deepResearch({
             reliabilityThreshold: serpQuery.reliabilityThreshold,
             researchGoal: serpQuery.researchGoal,
             model,
+            budget,
           });
           
           const allLearnings = [...learnings, ...processedResult.learnings];
           const allUrls = [...visitedUrls, ...newUrls];
           const allSourceMetadata = [...(processedResult.sourceMetadata || [])];
           const allWeightedLearnings = [...weightedLearnings, ...processedResult.weightedLearnings];
+
+          if (budget?.reached) {
+            reportProgress({
+              completedQueries: progress.completedQueries + 1,
+              currentQuery: serpQuery.query,
+              parentQuery: query,
+              learningsCount: processedResult.learnings.length,
+              learnings: processedResult.learnings,
+              followUpQuestions: processedResult.followUpQuestions,
+            });
+            return {
+              learnings: allLearnings,
+              learningReliabilities: processedResult.learningConfidences,
+              visitedUrls: allUrls,
+              sourceMetadata: allSourceMetadata,
+              weightedLearnings: allWeightedLearnings
+            };
+          }
 
           if (newDepth > 0) {
             log(
@@ -525,6 +601,8 @@ Follow-up research directions: ${processedResult.followUpQuestions.map(q => `\n$
               })),
               onProgress,
               model,
+              tokenBudget,
+              budgetState: budget,
             });
           } else {
             reportProgress({
@@ -563,7 +641,8 @@ Follow-up research directions: ${processedResult.followUpQuestions.map(q => `\n$
     learningReliabilities: [...new Set(results.flatMap(r => r.learningReliabilities))],
     visitedUrls: [...new Set(results.flatMap(r => r.visitedUrls))],
     sourceMetadata: [...new Set(results.flatMap(r => r.sourceMetadata))],
-    weightedLearnings: [...new Set(results.flatMap(r => r.weightedLearnings))]
+    weightedLearnings: [...new Set(results.flatMap(r => r.weightedLearnings))],
+    budget: budget
   };
 
   return combinedResults;

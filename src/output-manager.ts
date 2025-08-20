@@ -6,9 +6,11 @@ export class OutputManager {
   private initialized: boolean = false;
 
   constructor() {
-    // Initialize terminal using stderr
-    process.stderr.write('\n'.repeat(this.progressLines));
-    this.initialized = true;
+    // Initialize terminal using stderr only for TTYs
+    if (process.stderr.isTTY) {
+      process.stderr.write('\n'.repeat(this.progressLines));
+      this.initialized = true;
+    }
   }
 
   log(...args: any[]) {
@@ -34,6 +36,14 @@ export class OutputManager {
       progress.currentQuery ? `Current:  ${progress.currentQuery}` : '',
     ];
     this.drawProgress();
+  }
+
+  finish() {
+    // Stop progress rendering and move cursor below the progress area
+    if (this.initialized) {
+      this.initialized = false;
+      process.stderr.write('\n');
+    }
   }
 
   private getProgressBar(value: number, total: number): string {

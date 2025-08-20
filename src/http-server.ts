@@ -31,9 +31,10 @@ function createServer(): McpServer {
       query: z.string().min(1).describe("The research query to investigate"),
       depth: z.number().min(1).max(5).describe("How deep to go in the research tree (1-5)"),
       breadth: z.number().min(1).max(5).describe("How broad to make each research level (1-5)"),
-      model: z.string().optional().describe('Model specifier, e.g. "openai:gpt-5"')
+      model: z.string().optional().describe('Model specifier, e.g. "openai:gpt-5"'),
+      tokenBudget: z.number().optional().describe('Optional soft cap for total research-phase tokens; final report not counted')
     },
-      async ({ query, depth, breadth, model: modelSpec }, { sendNotification }) => {
+      async ({ query, depth, breadth, model: modelSpec, tokenBudget }, { sendNotification }) => {
       try {
         let currentProgress = '';
 
@@ -43,6 +44,7 @@ function createServer(): McpServer {
           depth,
           breadth,
           model,
+          tokenBudget,
           onProgress: async progress => {
             const progressMsg = `Depth ${progress.currentDepth}/${progress.totalDepth}, Query ${progress.completedQueries}/${progress.totalQueries}: ${progress.currentQuery || ''}`;
             if (progressMsg !== currentProgress) {

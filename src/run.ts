@@ -53,13 +53,16 @@ async function run() {
 
   const chosenProvider = (await askQuestion('Model provider (openai|anthropic|google|xai) [openai]: ')).trim() || 'openai';
   const chosenModelName = (await askQuestion('Model name (enter for default): ')).trim();
-  const modelSpecifier = chosenModelName ? `${chosenProvider}:${chosenModelName}` : `${chosenProvider}`;
+  const modelSpecifier = chosenModelName ? `${chosenProvider}:${chosenModelName}` : `${chosenProvider}:`;
   const model = getModel(modelSpecifier);
+  const tokenBudgetInput = (await askQuestion('Optional research token budget (total tokens, press Enter to skip): ')).trim();
+  const tokenBudget = tokenBudgetInput ? parseInt(tokenBudgetInput, 10) || undefined : undefined;
   setupSpan.end({
     output: {
       initialQuery,
       breadth,
       depth,
+      tokenBudget: tokenBudget ?? null,
     },
   });
 
@@ -119,11 +122,12 @@ ${followUpQuestions.map((q: string, i: number) => `Q: ${q}\nA: ${answers[i]}`).j
     totalLearnings: 0
   };
 
-  const { learnings, visitedUrls, sourceMetadata, weightedLearnings } = await deepResearch({
+  const { learnings, visitedUrls, sourceMetadata, weightedLearnings, budget } = await deepResearch({
     query: combinedQuery,
     breadth,
     depth,
     model,
+    tokenBudget,
     onProgress: progress => {
       output.updateProgress(progress);
 
@@ -177,9 +181,13 @@ ${followUpQuestions.map((q: string, i: number) => `Q: ${q}\nA: ${answers[i]}`).j
     }
   });
 
-  log(`\n\nLearnings:\n\n${learnings.join('\n')}`);
-  log(`\n\nVisited URLs (${visitedUrls.length}):\n\n${visitedUrls.join('\n')}`);
-  log('Writing final report...');
+  console.log(`\n\nLearnings:\n\n${learnings.join('\n')}`);
+  console.log(`\n\nVisited URLs (${visitedUrls.length}):\n\n${visitedUrls.join('\n')}`);
+  if (budget?.tokenBudget && budget.reached) {
+    console.log(`Token budget reached (${budget.usedTokens}/${budget.tokenBudget}). Generating final report...`);
+  } else {
+    console.log('Writing final report...');
+  }
 
   // Track report generation
   const reportSpan = sessionTrace.span({
@@ -207,6 +215,8 @@ ${followUpQuestions.map((q: string, i: number) => `Q: ${q}\nA: ${answers[i]}`).j
     }
   });
 
+  console.log('Report written to output.md');
+
   // Update final session metrics
   sessionTrace.update({
     output: {
@@ -221,6 +231,7 @@ ${followUpQuestions.map((q: string, i: number) => `Q: ${q}\nA: ${answers[i]}`).j
   });
 
   await langfuse.shutdownAsync();
+  output.finish?.();
   rl.close();
 }
 
