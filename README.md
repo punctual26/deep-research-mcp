@@ -47,6 +47,7 @@ Server runs on `http://localhost:3000/mcp` without session management.
 - Produces detailed markdown reports with findings, sources, and reliability assessments
 - Available as a Model Context Protocol (MCP) tool for AI agents
 - For now MCP version doesn't ask follow up questions
+- Natural-language source preferences (avoid listicles, forums, affiliate reviews, specific domains)
 
 ### Model Selection (OpenAI, Anthropic, Google, xAI)
 

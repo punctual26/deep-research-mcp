@@ -57,6 +57,7 @@ async function run() {
   const model = getModel(modelSpecifier);
   const tokenBudgetInput = (await askQuestion('Optional research token budget (total tokens, press Enter to skip): ')).trim();
   const tokenBudget = tokenBudgetInput ? parseInt(tokenBudgetInput, 10) || undefined : undefined;
+  const sourcePreferences = (await askQuestion('Optional source preferences to avoid (e.g., "avoid SEO top 10 listicles, forums, affiliate reviews"). Press Enter to skip: ')).trim();
   setupSpan.end({
     output: {
       initialQuery,
@@ -128,6 +129,7 @@ ${followUpQuestions.map((q: string, i: number) => `Q: ${q}\nA: ${answers[i]}`).j
     depth,
     model,
     tokenBudget,
+    sourcePreferences: sourcePreferences || undefined,
     onProgress: progress => {
       output.updateProgress(progress);
 

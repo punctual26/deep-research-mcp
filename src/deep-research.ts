@@ -65,6 +65,12 @@ type LearningWithReliability = {
   reliability: number;
 };
 
+// Natural-language source preference rules parsed from user input
+type SuitabilityDecision = {
+  use: boolean;
+  reason: string;
+};
+
 // Optional token budget tracking for the research phase
 type BudgetState = {
   tokenBudget?: number;
@@ -101,6 +107,7 @@ async function generateSerpQueries({
   learnings,
   learningReliabilities,
   researchDirections = [],
+  sourcePreferences,
   model,
   budget,
 }: {
@@ -109,6 +116,7 @@ async function generateSerpQueries({
   learnings?: string[];
   learningReliabilities?: number[];
   researchDirections?: ResearchDirection[];
+  sourcePreferences?: string;
   model: LanguageModelV2;
   budget?: BudgetState;
 }) {
@@ -143,6 +151,13 @@ ${researchDirections
   .join('\n')}
 
 Focus on generating queries that address these research directions, especially the higher priority ones.`
+  : ''}
+
+${sourcePreferences && sourcePreferences.trim().length > 0
+  ? `\nUser source preferences to avoid during research:
+${sourcePreferences}
+
+Prefer authoritative, primary, and technical sources; avoid queries that are likely to surface excluded sources (e.g., thin SEO listicles, affiliate reviews) when possible.`
   : ''}
 
 <prompt>${query}</prompt>`,
@@ -198,47 +213,56 @@ Focus on generating queries that address these research directions, especially t
   return validatedQueries;
 }
 
-async function evaluateSourceReliability(domain: string, context: string, model: LanguageModelV2, budget?: BudgetState): Promise<{
-  score: number;
-  reasoning: string;
-}> {
+async function evaluateSourceReliability({
+  item,
+  query,
+  sourcePreferences,
+  model,
+  budget,
+}: {
+  item: { url?: string | null; title?: string | null; markdown?: string | null };
+  query: string;
+  sourcePreferences?: string;
+  model: LanguageModelV2;
+  budget?: BudgetState;
+}): Promise<{ score: number; reasoning: string; use: boolean; preferenceReason?: string; domain: string }> {
+  const url = item.url || '';
+  const title = item.title || '';
+  let domain = '';
+  try {
+    domain = url ? new URL(url).hostname : '';
+  } catch {
+    domain = '';
+  }
+  const contentSnippet = trimPrompt(item.markdown || '', 4000);
+
+  const prefBlock = sourcePreferences && sourcePreferences.trim().length > 0
+    ? `User preferences to avoid (apply holistically, not via keywords):\n<preferences>${sourcePreferences}</preferences>\n\nAlso return whether this source should be USED given these preferences.`
+    : 'No special user preferences provided.';
+
   const res = await generateObject({
     model,
     system: systemPrompt(),
-    prompt: `Evaluate the reliability of the following source domain for research about: "${context}"
+    prompt: `Evaluate the reliability and suitability of this source for the research query. Provide a reliability score and a brief reasoning. If user preferences are provided, judge suitability holistically against them.
 
-Domain: ${domain}
+${prefBlock}
 
-Consider factors like:
-1. Editorial standards and fact-checking processes
-2. Domain expertise in the subject matter
-3. Reputation for accuracy and objectivity
-4. Transparency about sources and methodology
-5. Professional vs user-generated content
-6. Commercial biases or conflicts of interest
-7. Academic or professional credentials
-8. Track record in the field
+Research query:\n<query>${query}</query>
 
-Return a reliability score between 0 and 1, where:
-- 0.9-1.0: Highest reliability (e.g. peer-reviewed journals, primary sources)
-- 0.7-0.89: Very reliable (e.g. respected news organizations)
-- 0.5-0.69: Moderately reliable (e.g. industry blogs with editorial oversight)
-- 0.3-0.49: Limited reliability (e.g. personal blogs, commercial sites)
-- 0-0.29: Low reliability (e.g. known misinformation sources)`,
+Source:\n- URL: ${url}\n- Domain: ${domain}\n- Title: ${title}\n- Content (truncated):\n"""\n${contentSnippet}\n"""
+
+Return JSON: { "score": number (0..1), "reasoning": string, "use": boolean, "preferenceReason"?: string }`,
     schema: z.object({
-      score: z.number().describe('Reliability score between 0 and 1'),
-      reasoning: z.string().describe('Brief explanation of the reliability assessment, one or two sentences'),
-      domainExpertise: z.string().describe('Assessment of domain expertise in this specific topic')
-    })
+      score: z.number(),
+      reasoning: z.string(),
+      use: z.boolean(),
+      preferenceReason: z.string().optional(),
+    }),
   });
 
-  // Count usage (research phase)
   recordUsage(budget, (res as any)?.usage);
 
-  return {
-    score: res.object.score,
-    reasoning: res.object.reasoning
-  };
+  return { score: res.object.score, reasoning: res.object.reasoning, use: res.object.use, preferenceReason: res.object.preferenceReason, domain };
 }
 
 async function processSerpResult({
@@ -248,6 +272,7 @@ async function processSerpResult({
   numFollowUpQuestions = 3,
   reliabilityThreshold = 0.3,
   researchGoal = '',
+  sourcePreferences,
   model,
   budget,
 }: {
@@ -257,6 +282,7 @@ async function processSerpResult({
   numFollowUpQuestions?: number;
   reliabilityThreshold?: number;
   researchGoal?: string;
+  sourcePreferences?: string;
   model: LanguageModelV2;
   budget?: BudgetState;
 }): Promise<{
@@ -267,31 +293,42 @@ async function processSerpResult({
   sourceMetadata: SourceMetadata[];
   weightedLearnings: LearningWithReliability[];
 }> {
-  const contents = compact(result.data.map(item => item.markdown)).map(
-    content => trimPrompt(content, 25_000),
+  // Evaluate reliability and suitability per item; exclude any with use=false
+  const evaluations = await Promise.all(
+    compact(result.data).map(async item => {
+      if (!item.url) return null;
+      try {
+        const ev = await evaluateSourceReliability({ item, query, sourcePreferences, model, budget });
+        if (ev.use === false) return { excluded: true, item } as const;
+        return { excluded: false, item, ev } as const;
+      } catch {
+        // On error, keep the item to avoid over-filtering
+        return { excluded: false, item } as const;
+      }
+    }),
   );
 
-  // Evaluate source reliability for each domain
-  const sourceMetadataPromises = compact(result.data.map(async item => {
-    if (!item.url) return null;
-    try {
-      const domain = new URL(item.url).hostname;
-      const reliability = await evaluateSourceReliability(domain, query, model, budget);
-      return {
-        url: item.url,
-        title: item.title || undefined,
-        publishDate: undefined,
-        domain,
-        relevanceScore: undefined,
-        reliabilityScore: reliability.score,
-        reliabilityReasoning: reliability.reasoning
-      } as SourceMetadata;
-    } catch (e) {
-      return null;
-    }
-  }));
+  const kept = evaluations.filter((r): r is { excluded: false; item: any; ev?: any } => !!r && r.excluded === false);
+  const excludedCount = evaluations.filter(r => r && (r as any).excluded === true).length;
 
-  const sourceMetadata = compact(await Promise.all(sourceMetadataPromises));
+  const contents = kept
+    .map(r => r.item.markdown)
+    .filter(Boolean)
+    .map(content => trimPrompt(content as string, 25_000));
+
+  const sourceMetadata = kept
+    .map(r => {
+      const ev = (r as any).ev as { score?: number; reasoning?: string; domain?: string } | undefined;
+      return {
+        url: r.item.url as string,
+        title: r.item.title || undefined,
+        publishDate: undefined,
+        domain: (ev && ev.domain) || (r.item.url ? new URL(r.item.url).hostname : ''),
+        relevanceScore: undefined,
+        reliabilityScore: (ev && typeof ev.score === 'number') ? ev.score : 0.5,
+        reliabilityReasoning: (ev && ev.reasoning) || 'No reasoning provided',
+      } as SourceMetadata;
+    });
 
   // Sort and filter contents by reliability
   const contentWithMetadata = contents
@@ -307,7 +344,18 @@ async function processSerpResult({
     .filter(item => item.metadata.reliabilityScore >= reliabilityThreshold)
     .map(item => item.content);
 
-  log(`Ran ${query}, found ${contents.length} contents (${sourceMetadata.filter(m => m.reliabilityScore >= reliabilityThreshold).length} above reliability threshold ${reliabilityThreshold})`);
+  log(`Ran ${query}, found ${contents.length} contents (${sourceMetadata.filter(m => m.reliabilityScore >= reliabilityThreshold).length} above reliability threshold ${reliabilityThreshold}${excludedCount > 0 ? `; ${excludedCount} excluded by preferences in reliability stage` : ''})`);
+
+  if (contents.length === 0) {
+    return {
+      learnings: [],
+      learningConfidences: [],
+      followUpQuestions: [],
+      followUpPriorities: [],
+      sourceMetadata,
+      weightedLearnings: [],
+    };
+  }
 
   const res = await generateObject({
     model,
@@ -448,6 +496,7 @@ export async function deepResearch({
   model: providedModel,
   tokenBudget,
   budgetState,
+  sourcePreferences,
 }: {
   query: string;
   breadth: number;
@@ -461,6 +510,7 @@ export async function deepResearch({
   model?: LanguageModelV2;
   tokenBudget?: number; // Optional soft cap for research-phase tokens
   budgetState?: BudgetState; // internal shared state for recursion
+  sourcePreferences?: string; // natural-language preferences to avoid certain sources
 }): Promise<{
   learnings: string[];
   learningReliabilities: number[];
@@ -475,6 +525,7 @@ export async function deepResearch({
     typeof tokenBudget === 'number' || budgetState
       ? budgetState ?? { tokenBudget, usedTokens: 0, reached: false }
       : undefined;
+
   const progress: ResearchProgress = {
     currentDepth: depth,
     totalDepth: depth,
@@ -495,6 +546,7 @@ export async function deepResearch({
     learningReliabilities,
     numQueries: breadth,
     researchDirections,  // Pass research directions to influence query generation
+    sourcePreferences,
     model,
     budget,
   });
@@ -538,6 +590,7 @@ export async function deepResearch({
             numFollowUpQuestions: newBreadth,
             reliabilityThreshold: serpQuery.reliabilityThreshold,
             researchGoal: serpQuery.researchGoal,
+            sourcePreferences,
             model,
             budget,
           });
@@ -603,6 +656,7 @@ Follow-up research directions: ${processedResult.followUpQuestions.map(q => `\n$
               model,
               tokenBudget,
               budgetState: budget,
+              sourcePreferences,
             });
           } else {
             reportProgress({
