@@ -450,7 +450,7 @@ export async function writeFinalReport({
   const res = await generateObject({
     model,
     system: systemPrompt(),
-    prompt: `Given the following prompt from the user, write a final report on the topic using the learnings from research. Make it as detailed as possible, aim for 3 or more pages, include ALL the learnings from research. Consider source reliability when drawing conclusions.
+    prompt: `Given the following prompt from the user, write a final report on the topic using the learnings from research. Make it detailed and comprehensive, include all relevant learnings from research, and weigh source reliability when drawing conclusions.
 
 <prompt>${prompt}</prompt>
 
