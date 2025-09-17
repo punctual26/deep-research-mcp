@@ -361,10 +361,10 @@ async function processSerpResult({
     model,
     abortSignal: AbortSignal.timeout(60_000),
     system: systemPrompt(),
-prompt: `Given the following contents from a SERP search for the query <query>${query}</query>, extract factual learnings. Do not summarize the whole topic; focus on concrete findings supported by the contents. There is no limit on detail or length, but avoid filler and generic statements.
+prompt: `Given the following contents from a SERP search for the query <query>${query}</query>, extract factual learnings. DFocus on concrete findings supported by the contents. There is no limit on detail or length.
 
 Output requirements for "learnings":
-- Return at most ${numLearnings} unique learnings (fewer is fine). Provide as much relevant detail as available without fluff.
+- Return at most ${numLearnings} unique learnings. Provide as much relevant detail as available.
 - Start each learning with the primary entity or subject, then state the finding. Include exact entities, model or product names, organizations, places, numbers, metrics, and dates exactly as they appear.
 - Merge duplicates and remove near-overlaps so each learning is distinct.
 - If sources conflict, prefer the higher-reliability source. If noting the conflict is essential, include a concise conflict note that names the sources and dates.
