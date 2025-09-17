@@ -361,15 +361,39 @@ async function processSerpResult({
     model,
     abortSignal: AbortSignal.timeout(60_000),
     system: systemPrompt(),
-    prompt: `Given the following contents from a SERP search for the query <query>${query}</query>, generate a list of learnings from the contents. Return a maximum of ${numLearnings} learnings, but feel free to return less if the contents are clear. Make sure each learning is unique and not similar to each other. The learnings should be concise and to the point, as detailed and information dense as possible. Make sure to include any entities like people, places, companies, products, things, etc in the learnings, as well as any exact metrics, numbers, or dates.
+prompt: `Given the following contents from a SERP search for the query <query>${query}</query>, extract factual learnings. Do not summarize the whole topic; focus on concrete findings supported by the contents. There is no limit on detail or length, but avoid filler and generic statements.
+
+Output requirements for "learnings":
+- Return at most ${numLearnings} unique learnings (fewer is fine). Provide as much relevant detail as available without fluff.
+- Start each learning with the primary entity or subject, then state the finding. Include exact entities, model or product names, organizations, places, numbers, metrics, and dates exactly as they appear.
+- Merge duplicates and remove near-overlaps so each learning is distinct.
+- If sources conflict, prefer the higher-reliability source. If noting the conflict is essential, include a concise conflict note that names the sources and dates.
+
+Attribution and confidence rules:
+- You will receive multiple <content> blocks inside <contents>; each has reliability="0..1", source="domain", and reasoning="text".
+- For each learning, set "sources" to the 1–3 domains that best support the learning (use the source= attribute values verbatim).
+- Set "confidence" to a number in [0,1] derived from supporting sources (prefer the maximum reliability among the supporting sources; if you combine, keep it within [0,1]).
+- Do not cite domains that are not present in the provided <content> blocks.
 
 ${researchGoal ? `Research Goal: ${researchGoal}
-This research is specifically aimed at: ${researchGoal}. Focus on findings that contribute to this goal.
+This research is specifically aimed at: ${researchGoal}. Prefer learnings that directly advance this goal.
 
-` : ''}Weight information by source reliability - be more confident in information from highly reliable sources and more cautious about information from less reliable sources. If possible, try to verify information from less reliable sources against more reliable ones.
+` : ''}Reliability guidance:
+- Weight facts by source reliability. If a detail appears only in low-reliability content and cannot be corroborated, either omit it or include it with proportionately lower confidence and name the domain.
 
-Also generate up to ${numFollowUpQuestions} follow-up questions, prioritized by reliability gaps and research needs${researchGoal ? ', keeping in mind the research goal' : ''}.
+Follow-up questions:
+- Generate up to ${numFollowUpQuestions} follow-up questions that would close reliability gaps, add missing numbers/dates/entities, or resolve conflicts${researchGoal ? ', keeping in mind the research goal' : ''}.
+- Each question must be specific. Set "priority" on a 1–5 scale (5 = highest impact on confidence). In "reason", briefly state which fact or source gap motivates the question (reference domains when relevant).
 
+Return JSON that matches the expected schema only. Do not include markdown fences or any extra text outside the JSON object.
+
+<contents>${contentWithMetadata
+  .map(({ content, metadata }) =>
+    `<content reliability="${metadata.reliabilityScore.toFixed(2)}" reasoning="${metadata.reliabilityReasoning}" source="${metadata.domain}">
+${content}
+</content>`
+  )
+  .join('\n')}</contents>`
 <contents>${contentWithMetadata
       .map(({ content, metadata }) => 
         `<content reliability="${metadata.reliabilityScore.toFixed(2)}" reasoning="${metadata.reliabilityReasoning}" source="${metadata.domain}">\n${content}\n</content>`
